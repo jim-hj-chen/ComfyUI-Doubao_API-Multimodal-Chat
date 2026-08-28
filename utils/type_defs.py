@@ -53,6 +53,9 @@ class MediaItem(TypedDict, total=False):
     file_name: str
     file_size: int
     fps: float
+    source_url: str
+    tos_bucket: str
+    tos_prefix: str
 
 
 class ImageListType(TypedDict):

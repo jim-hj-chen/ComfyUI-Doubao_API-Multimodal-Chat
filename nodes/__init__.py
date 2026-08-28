@@ -19,8 +19,8 @@ NODE_CLASS_MAPPINGS = {
 NODE_DISPLAY_NAME_MAPPINGS = {
     "DoubaoModelConfig": "豆包模型配置",
     "DoubaoTextInput": "豆包文本输入",
-    "DoubaoImageUpload": "豆包图片上传",
-    "DoubaoVideoUpload": "豆包视频上传",
-    "DoubaoFileUpload": "豆包文件上传",
+    "DoubaoImageUpload": "Doubao Image",
+    "DoubaoVideoUpload": "Doubao Video",
+    "DoubaoFileUpload": "Doubao File",
     "DoubaoRun": "Doubao Run",
 }

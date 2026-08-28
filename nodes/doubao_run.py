@@ -117,12 +117,27 @@ class DoubaoRun:
         fps = float(item.get("fps", 1.0))
         if item.get("mode") == VIDEO_MODE_BASE64:
             return [{"type": "input_video", "video_url": item["data_uri"], "fps": fps}]
-        uploaded = client.upload_file(
-            file_path=item["path"],
-            preprocess_configs={"video": {"fps": fps}},
-        )
+        uploaded = client.upload_file(**self._build_video_upload_kwargs(item))
         client.wait_for_file_ready(uploaded["file_id"])
         return [{"type": "input_video", "file_id": uploaded["file_id"]}]
+
+    def _build_video_upload_kwargs(self, item: Dict[str, Any]) -> Dict[str, Any]:
+        kwargs: Dict[str, Any] = {
+            "preprocess_configs": {"video": {"fps": float(item.get("fps", 1.0))}},
+        }
+        if item.get("source_url"):
+            kwargs["source_url"] = item["source_url"]
+        else:
+            kwargs["file_path"] = item["path"]
+
+        tos: Dict[str, str] = {}
+        if item.get("tos_bucket"):
+            tos["bucket"] = item["tos_bucket"]
+        if item.get("tos_prefix"):
+            tos["prefix"] = item["tos_prefix"]
+        if tos:
+            kwargs["tos"] = tos
+        return kwargs
 
     def _build_file_contents(
         self,

@@ -43,9 +43,11 @@ class DoubaoApiClient:
 
     def upload_file(
         self,
-        file_path: str,
+        file_path: Optional[str] = None,
+        source_url: Optional[str] = None,
         purpose: str = "user_data",
         preprocess_configs: Optional[Dict[str, Any]] = None,
+        tos: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
         """
         上传本地文件到 Files API。
@@ -56,27 +58,47 @@ class DoubaoApiClient:
             "raw": {...}
         }
         """
+        has_file_path = bool((file_path or "").strip())
+        has_source_url = bool((source_url or "").strip())
+        if has_file_path == has_source_url:
+            raise DoubaoApiError("上传参数错误：必须二选一提供 file_path 或 source_url。")
+
         url = f"{self.base_url}/files"
         form_data: Dict[str, str] = {"purpose": purpose}
         if preprocess_configs:
             form_data.update(_flatten_form_data("preprocess_configs", preprocess_configs))
+        if tos:
+            filtered_tos = {key: value for key, value in tos.items() if (value or "").strip()}
+            if filtered_tos:
+                form_data.update(_flatten_form_data("tos", filtered_tos))
+        if has_source_url:
+            form_data["url"] = (source_url or "").strip()
 
         last_error: Optional[Exception] = None
         for retry_index in range(self.max_retries):
             try:
-                with open(file_path, "rb") as file_obj:
+                if has_source_url:
                     response = self.session.post(
                         url,
                         headers=self.headers,
                         data=form_data,
-                        files={"file": file_obj},
                         timeout=self.timeout_seconds,
                     )
+                else:
+                    with open((file_path or "").strip(), "rb") as file_obj:
+                        response = self.session.post(
+                            url,
+                            headers=self.headers,
+                            data=form_data,
+                            files={"file": file_obj},
+                            timeout=self.timeout_seconds,
+                        )
                 data = self._parse_response_json(response)
                 file_id = data.get("id")
                 if not file_id:
                     raise DoubaoApiError(f"上传响应缺少 file_id：{data}")
-                LOGGER.info("文件上传成功: %s -> %s", file_path, file_id)
+                source_desc = (source_url or "").strip() if has_source_url else (file_path or "").strip()
+                LOGGER.info("文件上传成功: %s -> %s", source_desc, file_id)
                 return {"file_id": file_id, "raw": data}
             except Exception as error:  # pylint: disable=broad-except
                 last_error = error

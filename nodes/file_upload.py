@@ -18,7 +18,7 @@ from ..utils.file_handler import (
 from ..utils.type_defs import FileType
 
 
-FILE_MODE_FILES_API = "Files API 上传（推荐）"
+FILE_MODE_FILES_API = "本地文件路径（推荐）"
 FILE_MODE_BASE64 = "Base64 编码上传"
 FILE_MAX_FILES_API_BYTES = 512 * 1024 * 1024
 FILE_MAX_BASE64_BYTES = 50 * 1024 * 1024
@@ -58,7 +58,7 @@ class DoubaoFileUpload:
             item = self._build_files_api_item(文件路径)
         else:
             item = self._build_base64_item(文件Base64内容, Base64文件名)
-        ensure_total_max_size(item["file_size"], REQUEST_MAX_BYTES, "文档请求体")
+            ensure_total_max_size(item["file_size"], REQUEST_MAX_BYTES, "文档请求体")
         return ({"mode": 传入方式, "item": item},)
 
     def _build_files_api_item(self, path_text: str) -> dict:
