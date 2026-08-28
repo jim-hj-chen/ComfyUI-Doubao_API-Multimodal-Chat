@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Dict, Tuple
 
-from ..utils.type_defs import MODEL_PRESETS
+from ..utils.type_defs import MODEL_PRESET_TO_ID, MODEL_PRESETS
 
 
 class DoubaoModelConfig:
@@ -42,7 +42,7 @@ class DoubaoModelConfig:
         temperature: float,
         top_p: float,
     ) -> Tuple[dict]:
-        del 模型预设  # 节点运行时以 model_id 为准，此处保留入参用于前端联动。
+        _ = MODEL_PRESET_TO_ID.get(模型预设, "doubao-seed-evolving")
         if not api_key.strip():
             raise ValueError("API Key 不能为空，请在模型配置节点填写。")
         if not model_id.strip():

@@ -3,6 +3,14 @@ import { app } from "/scripts/app.js";
 const IMAGE_MODE_PATH = "本地文件路径（推荐）";
 const VIDEO_MODE_FILES_API = "Files API 上传（推荐）";
 const FILE_MODE_FILES_API = "Files API 上传（推荐）";
+const MODEL_PRESET_TO_ID = {
+  "doubao-seed-evolving": "doubao-seed-evolving",
+  "doubao-seed-2-1-pro": "doubao-seed-2-1-pro-260628",
+  "doubao-seed-2-1-turbo": "doubao-seed-2-1-turbo-260628",
+  "doubao-seed-2-0-lite": "doubao-seed-2-0-lite-260428",
+  "doubao-seed-2-0-mini": "doubao-seed-2-0-mini-260428",
+  "自定义": "",
+};
 
 function findWidget(node, name) {
   return node.widgets?.find((widget) => widget.name === name);
@@ -45,7 +53,8 @@ function installModelPresetBinding(node) {
   if (!presetWidget || !modelIdWidget) return;
 
   const updateModelId = (value) => {
-    modelIdWidget.value = String(value || "");
+    const fullModelId = MODEL_PRESET_TO_ID[String(value || "")] || String(value || "");
+    modelIdWidget.value = fullModelId;
     node.setDirtyCanvas(true, true);
   };
   const originalCallback = presetWidget.callback;
@@ -55,6 +64,7 @@ function installModelPresetBinding(node) {
       originalCallback.call(presetWidget, value, ...args);
     }
   };
+  updateModelId(presetWidget.value);
 }
 
 app.registerExtension({

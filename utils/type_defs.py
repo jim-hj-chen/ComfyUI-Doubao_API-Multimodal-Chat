@@ -6,19 +6,30 @@ from typing import Any, Dict, List, Literal, TypedDict
 
 ModelPreset = Literal[
     "doubao-seed-evolving",
-    "doubao-seed-2-1-pro-260628",
-    "doubao-seed-2-1-turbo-260628",
-    "doubao-seed-2-0-lite-260428",
-    "doubao-seed-2-0-mini-260428",
+    "doubao-seed-2-1-pro",
+    "doubao-seed-2-1-turbo",
+    "doubao-seed-2-0-lite",
+    "doubao-seed-2-0-mini",
+    "自定义",
 ]
 
 MODEL_PRESETS: List[ModelPreset] = [
     "doubao-seed-evolving",
-    "doubao-seed-2-1-pro-260628",
-    "doubao-seed-2-1-turbo-260628",
-    "doubao-seed-2-0-lite-260428",
-    "doubao-seed-2-0-mini-260428",
+    "doubao-seed-2-1-pro",
+    "doubao-seed-2-1-turbo",
+    "doubao-seed-2-0-lite",
+    "doubao-seed-2-0-mini",
+    "自定义",
 ]
+
+MODEL_PRESET_TO_ID: Dict[ModelPreset, str] = {
+    "doubao-seed-evolving": "doubao-seed-evolving",
+    "doubao-seed-2-1-pro": "doubao-seed-2-1-pro-260628",
+    "doubao-seed-2-1-turbo": "doubao-seed-2-1-turbo-260628",
+    "doubao-seed-2-0-lite": "doubao-seed-2-0-lite-260428",
+    "doubao-seed-2-0-mini": "doubao-seed-2-0-mini-260428",
+    "自定义": "",
+}
 
 
 class ConfigType(TypedDict):
