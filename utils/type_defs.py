@@ -1,0 +1,73 @@
+"""插件内部类型定义。"""
+
+from __future__ import annotations
+
+from typing import Any, Dict, List, Literal, TypedDict
+
+ModelPreset = Literal[
+    "doubao-seed-evolving",
+    "doubao-seed-2-1-pro-260628",
+    "doubao-seed-2-1-turbo-260628",
+    "doubao-seed-2-0-lite-260428",
+    "doubao-seed-2-0-mini-260428",
+]
+
+MODEL_PRESETS: List[ModelPreset] = [
+    "doubao-seed-evolving",
+    "doubao-seed-2-1-pro-260628",
+    "doubao-seed-2-1-turbo-260628",
+    "doubao-seed-2-0-lite-260428",
+    "doubao-seed-2-0-mini-260428",
+]
+
+
+class ConfigType(TypedDict):
+    """模型配置对象。"""
+
+    base_url: str
+    api_key: str
+    model_id: str
+    max_tokens: int
+    temperature: float
+    top_p: float
+
+
+class MediaItem(TypedDict, total=False):
+    """图片/视频/文件统一媒体条目。"""
+
+    mode: str
+    path: str
+    data_uri: str
+    mime_type: str
+    file_name: str
+    file_size: int
+    fps: float
+
+
+class ImageListType(TypedDict):
+    """图片列表结构。"""
+
+    mode: str
+    items: List[MediaItem]
+    total_bytes: int
+
+
+class VideoType(TypedDict):
+    """视频结构。"""
+
+    mode: str
+    item: MediaItem
+
+
+class FileType(TypedDict):
+    """文档结构。"""
+
+    mode: str
+    item: MediaItem
+
+
+class StreamResult(TypedDict):
+    """流式响应聚合结果。"""
+
+    text: str
+    usage: Dict[str, Any]

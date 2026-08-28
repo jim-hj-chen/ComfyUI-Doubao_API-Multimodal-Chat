@@ -1,0 +1,227 @@
+"""豆包 Responses / Files API 客户端封装。"""
+
+from __future__ import annotations
+
+import json
+import logging
+import time
+from typing import Any, Dict, Iterable, Optional, Tuple
+
+import requests
+
+from .type_defs import StreamResult
+
+
+LOGGER = logging.getLogger("comfyui_doubao.api_client")
+
+
+class DoubaoApiError(RuntimeError):
+    """豆包 API 业务异常。"""
+
+
+class DoubaoApiClient:
+    """简化的豆包 API 客户端。"""
+
+    def __init__(
+        self,
+        base_url: str,
+        api_key: str,
+        timeout_seconds: int = 60,
+        max_retries: int = 3,
+    ) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.api_key = api_key.strip()
+        self.timeout_seconds = timeout_seconds
+        self.max_retries = max_retries
+        self.session = requests.Session()
+
+    @property
+    def headers(self) -> Dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self.api_key}",
+        }
+
+    def upload_file(
+        self,
+        file_path: str,
+        purpose: str = "user_data",
+        preprocess_configs: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        上传本地文件到 Files API。
+
+        返回值包含 file_id 与原始响应：
+        {
+            "file_id": "file-xxx",
+            "raw": {...}
+        }
+        """
+        url = f"{self.base_url}/files"
+        form_data: Dict[str, str] = {"purpose": purpose}
+        if preprocess_configs:
+            form_data.update(_flatten_form_data("preprocess_configs", preprocess_configs))
+
+        last_error: Optional[Exception] = None
+        for retry_index in range(self.max_retries):
+            try:
+                with open(file_path, "rb") as file_obj:
+                    response = self.session.post(
+                        url,
+                        headers=self.headers,
+                        data=form_data,
+                        files={"file": file_obj},
+                        timeout=self.timeout_seconds,
+                    )
+                data = self._parse_response_json(response)
+                file_id = data.get("id")
+                if not file_id:
+                    raise DoubaoApiError(f"上传响应缺少 file_id：{data}")
+                LOGGER.info("文件上传成功: %s -> %s", file_path, file_id)
+                return {"file_id": file_id, "raw": data}
+            except Exception as error:  # pylint: disable=broad-except
+                last_error = error
+                LOGGER.warning("文件上传失败（第 %s 次）: %s", retry_index + 1, error)
+                if retry_index < self.max_retries - 1:
+                    time.sleep(2**retry_index)
+        raise DoubaoApiError(f"文件上传失败，已重试 {self.max_retries} 次：{last_error}") from last_error
+
+    def wait_for_file_ready(
+        self,
+        file_id: str,
+        poll_interval_seconds: float = 2.0,
+        max_wait_seconds: int = 300,
+    ) -> Dict[str, Any]:
+        """轮询文件状态直到可用。"""
+        deadline = time.time() + max_wait_seconds
+        url = f"{self.base_url}/files/{file_id}"
+        last_status = "unknown"
+        while time.time() < deadline:
+            response = self.session.get(url, headers=self.headers, timeout=self.timeout_seconds)
+            data = self._parse_response_json(response)
+            status = (data.get("status") or "").lower()
+            last_status = status or last_status
+            LOGGER.info("文件状态轮询: %s -> %s", file_id, status)
+            if status in {"processed", "succeeded", "completed", "ready"}:
+                return data
+            if status in {"failed", "error", "cancelled"}:
+                raise DoubaoApiError(f"文件处理失败：{file_id}，状态：{status}")
+            time.sleep(poll_interval_seconds)
+        raise DoubaoApiError(f"等待文件处理超时：{file_id}，最后状态：{last_status}")
+
+    def create_response(
+        self,
+        payload: Dict[str, Any],
+        stream: bool = False,
+    ) -> Tuple[str, Dict[str, Any]]:
+        """调用 Responses API，返回 (文本, usage)。"""
+        url = f"{self.base_url}/responses"
+        request_payload = dict(payload)
+        request_payload["stream"] = stream
+
+        if stream:
+            with self.session.post(
+                url,
+                headers={**self.headers, "Content-Type": "application/json"},
+                json=request_payload,
+                timeout=self.timeout_seconds,
+                stream=True,
+            ) as response:
+                if response.status_code >= 400:
+                    self._raise_response_error(response)
+                stream_result = self._consume_sse_events(response.iter_lines(decode_unicode=True))
+                return stream_result["text"], stream_result["usage"]
+
+        response = self.session.post(
+            url,
+            headers={**self.headers, "Content-Type": "application/json"},
+            json=request_payload,
+            timeout=self.timeout_seconds,
+        )
+        data = self._parse_response_json(response)
+        text = _extract_output_text(data)
+        usage = data.get("usage") or {}
+        return text, usage
+
+    def _parse_response_json(self, response: requests.Response) -> Dict[str, Any]:
+        """解析 JSON 响应，并处理错误码。"""
+        if response.status_code >= 400:
+            self._raise_response_error(response)
+        try:
+            return response.json()
+        except ValueError as error:
+            raise DoubaoApiError(f"响应非 JSON 格式：{response.text}") from error
+
+    def _raise_response_error(self, response: requests.Response) -> None:
+        """将 HTTP 错误转换为中文异常。"""
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = {"message": response.text}
+        error_obj = payload.get("error", payload)
+        message = error_obj.get("message") if isinstance(error_obj, dict) else str(error_obj)
+        code = error_obj.get("code") if isinstance(error_obj, dict) else None
+        tip = f"调用失败（HTTP {response.status_code}）"
+        if code:
+            tip += f"，错误码：{code}"
+        if message:
+            tip += f"，详情：{message}"
+        raise DoubaoApiError(tip)
+
+    def _consume_sse_events(self, lines: Iterable[str]) -> StreamResult:
+        """消费 SSE 事件流并聚合文本与 usage。"""
+        chunks = []
+        usage: Dict[str, Any] = {}
+        for line in lines:
+            if not line:
+                continue
+            stripped = line.strip()
+            if stripped == "data: [DONE]":
+                break
+            if not stripped.startswith("data: "):
+                continue
+            raw_json = stripped[6:]
+            try:
+                event = json.loads(raw_json)
+            except ValueError:
+                LOGGER.debug("忽略非 JSON 事件：%s", raw_json)
+                continue
+
+            event_type = event.get("type", "")
+            if event_type == "response.output_text.delta":
+                delta = event.get("delta") or ""
+                chunks.append(delta)
+            elif event_type == "response.completed":
+                response_obj = event.get("response") or {}
+                usage = response_obj.get("usage") or usage
+            elif event_type.endswith(".failed"):
+                raise DoubaoApiError(f"流式请求失败：{event}")
+        return {"text": "".join(chunks).strip(), "usage": usage}
+
+
+def _flatten_form_data(prefix: str, value: Any) -> Dict[str, str]:
+    """将嵌套字典展开为 multipart 表单字段。"""
+    flattened: Dict[str, str] = {}
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            nested_prefix = f"{prefix}[{key}]"
+            flattened.update(_flatten_form_data(nested_prefix, nested))
+    else:
+        flattened[prefix] = str(value)
+    return flattened
+
+
+def _extract_output_text(response_json: Dict[str, Any]) -> str:
+    """从 Responses API 响应中提取可读文本。"""
+    text_chunks = []
+    for item in response_json.get("output", []):
+        if item.get("type") == "message":
+            for content_item in item.get("content", []):
+                if content_item.get("type") == "output_text":
+                    text_chunks.append(content_item.get("text", ""))
+        elif item.get("type") == "output_text":
+            text_chunks.append(item.get("text", ""))
+    if not text_chunks:
+        fallback = response_json.get("output_text")
+        if isinstance(fallback, str):
+            return fallback
+    return "".join(text_chunks).strip()
