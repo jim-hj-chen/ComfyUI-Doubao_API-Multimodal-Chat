@@ -23,13 +23,20 @@ const UI_STRINGS = {
     pickImage: "Choose images",
     pickVideo: "Choose video",
     pickFile: "Choose file",
-    dropImages: "Drop images here (multiple allowed)",
+    dropImages: "Drop images here (max 9, each ≤512MB)",
     dropVideoLocal: "Drop a video here (single file, max 512MB)",
     dropVideoTos: "Drop a video here (stored on Volcengine TOS, max 2GB)",
-    dropFile: "Drop a document here (single file)",
+    dropFile: "Drop a document here (single file, max 512MB)",
+    imageLimitHint: "Up to 9 images. Each file must be 512MB or smaller.",
+    fileLimitHint: "Single document. File size must not exceed 512MB.",
     fileN: (index) => `File ${index + 1}`,
     uploadFailed: "Upload to server failed.",
+    uploadFailedComfy: "Upload to ComfyUI server failed.",
+    uploadNetworkError: "Network error while uploading to ComfyUI server.",
     invalidServerPath: "Server did not return a valid path.",
+    uploading: "Uploading...",
+    uploadComplete: "Upload complete.",
+    uploadProgress: (percent) => `Upload progress: ${percent}%`,
     imageCountLimit: "Too many images. Maximum is 9.",
     imageTooLarge: (name) => `Image ${name} exceeds 512MB.`,
     videoTooLarge: (name, limitLabel, hint) =>
@@ -49,13 +56,20 @@ const UI_STRINGS = {
     pickImage: "选择图片上传",
     pickVideo: "选择视频上传",
     pickFile: "选择文件上传",
-    dropImages: "拖拽图片到此处（支持多张）",
+    dropImages: "拖拽图片到此处（最多 9 张，单张不超过 512MB）",
     dropVideoLocal: "拖拽视频到此处（仅单个，最大 512MB）",
     dropVideoTos: "拖拽视频到此处（将存入火山引擎 TOS，最大 2GB）",
-    dropFile: "拖拽文档到此处（仅单个）",
+    dropFile: "拖拽文档到此处（仅单个，不超过 512MB）",
+    imageLimitHint: "最多 9 张图片，单张文件大小不能超过 512MB。",
+    fileLimitHint: "仅支持单个文档，文件大小不能超过 512MB。",
     fileN: (index) => `第 ${index + 1} 个文件`,
     uploadFailed: "上传到服务器失败。",
+    uploadFailedComfy: "上传到 ComfyUI 服务器失败。",
+    uploadNetworkError: "上传到 ComfyUI 服务器时发生网络错误。",
     invalidServerPath: "服务器未返回有效路径。",
+    uploading: "上传中...",
+    uploadComplete: "上传完成。",
+    uploadProgress: (percent) => `上传进度：${percent}%`,
     imageCountLimit: "图片数量超限，最多允许 9 张。",
     imageTooLarge: (name) => `图片 ${name} 超过 512MB。`,
     videoTooLarge: (name, limitLabel, hint) =>
@@ -165,6 +179,47 @@ function injectStyles() {
       color: #d8dee9;
     }
     .doubao-dropzone.active { border-color: #7aa2f7; background: rgba(122, 162, 247, 0.08); }
+    .doubao-hint {
+      flex-shrink: 0;
+      font-size: 11px;
+      line-height: 1.4;
+      color: #aeb6c2;
+    }
+    .doubao-progress {
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .doubao-progress-outer {
+      width: 100%;
+      height: 8px;
+      border-radius: 999px;
+      background: #2d3443;
+      overflow: hidden;
+    }
+    .doubao-progress-inner {
+      width: 0;
+      height: 100%;
+      background: #7aa2f7;
+      transition: width 120ms ease-out;
+    }
+    /* Vue / DOM widgets: keep the title column, clip the value instead of overlapping. */
+    .lg-node-widget,
+    [data-testid="node-widget"] {
+      min-width: 0;
+    }
+    .lg-node-widget input,
+    .lg-node-widget textarea,
+    .lg-node-widget .p-inputtext,
+    [data-testid="node-widget"] input,
+    [data-testid="node-widget"] textarea,
+    [data-testid="node-widget"] .p-inputtext {
+      min-width: 0 !important;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
     .doubao-grid {
       flex: 1;
       min-height: 0;
@@ -248,30 +303,57 @@ function mediaTypeForKind(kind) {
   return "file";
 }
 
-async function uploadPathModeFile(file, kind) {
-  const formData = new FormData();
-  formData.append("file", file, file.name);
-  formData.append("media_type", mediaTypeForKind(kind));
+function uploadPathModeFile(file, kind, handlers = {}) {
+  return new Promise((resolve, reject) => {
+    const formData = new FormData();
+    formData.append("file", file, file.name);
+    formData.append("media_type", mediaTypeForKind(kind));
 
-  const response = await api.fetchApi("/doubao/upload", {
-    method: "POST",
-    body: formData,
-  });
-  if (!response.ok) {
-    let message = ui().uploadFailed;
-    try {
-      const payload = await response.json();
-      message = payload?.error || message;
-    } catch (error) {
-      console.error(error);
+    const request = new XMLHttpRequest();
+    request.open("POST", api.apiURL("/doubao/upload"), true);
+
+    if (typeof handlers.onProgress === "function") {
+      request.upload.onprogress = (event) => {
+        if (!event.lengthComputable || event.total <= 0) return;
+        const percent = Math.max(
+          0,
+          Math.min(100, Math.round((event.loaded / event.total) * 100))
+        );
+        handlers.onProgress(percent);
+      };
     }
-    throw new Error(message);
-  }
-  const payload = await response.json();
-  if (!payload?.ok || !payload?.path) {
-    throw new Error(payload?.error || ui().invalidServerPath);
-  }
-  return payload;
+
+    request.onerror = () => {
+      reject(new Error(ui().uploadNetworkError));
+    };
+
+    request.onload = () => {
+      let payload = null;
+      try {
+        payload = request.responseText ? JSON.parse(request.responseText) : null;
+      } catch (error) {
+        console.error(error);
+      }
+
+      if (request.status < 200 || request.status >= 300) {
+        const detail = payload?.error ? ` ${payload.error}` : "";
+        reject(new Error(`${ui().uploadFailedComfy}${detail}`));
+        return;
+      }
+
+      if (!payload?.ok || !payload?.path) {
+        reject(new Error(payload?.error || ui().invalidServerPath));
+        return;
+      }
+
+      if (typeof handlers.onProgress === "function") {
+        handlers.onProgress(100);
+      }
+      resolve(payload);
+    };
+
+    request.send(formData);
+  });
 }
 
 function showModal(contentNode) {
@@ -297,6 +379,91 @@ function refreshNodeLayout(node) {
     }
   }
   node.setDirtyCanvas(true, true);
+}
+
+const DOUBAO_NODE_NAMES = new Set([
+  "DoubaoModelConfig",
+  "DoubaoTextInput",
+  "DoubaoImageUpload",
+  "DoubaoVideoUpload",
+  "DoubaoFileUpload",
+  "DoubaoRun",
+]);
+const DOUBAO_MIN_NODE_WIDTH = 280;
+
+function setTruncateWidgetValuesFirst(enabled) {
+  const lg = globalThis.LiteGraph;
+  if (!lg || !("truncateWidgetValuesFirst" in lg)) return undefined;
+  const previous = lg.truncateWidgetValuesFirst;
+  lg.truncateWidgetValuesFirst = enabled;
+  return previous;
+}
+
+function padOverlayInputs(node) {
+  for (const widget of node.widgets || []) {
+    const el =
+      widget.inputEl ||
+      (widget.element?.tagName === "INPUT" || widget.element?.tagName === "TEXTAREA"
+        ? widget.element
+        : widget.element?.querySelector?.("input, textarea"));
+    if (!el || !el.style) continue;
+    if (widget.hidden) continue;
+    const label = String(widget.label || widget.name || "");
+    if (!label || widget.type === "customtext" || widget.type === "doubao_media") continue;
+    const labelPx = Math.min(140, Math.max(56, label.length * 12 + 12));
+    el.style.boxSizing = "border-box";
+    el.style.paddingLeft = `${labelPx}px`;
+    el.style.textOverflow = "ellipsis";
+    el.style.overflow = "hidden";
+    el.style.minWidth = "0";
+  }
+}
+
+function wrapWidgetDrawForLabels(widget) {
+  if (!widget || widget._doubaoLabelGuard) return;
+  widget._doubaoLabelGuard = true;
+  const originalDrawWidget = widget.drawWidget;
+  if (typeof originalDrawWidget === "function") {
+    widget.drawWidget = function drawWidgetGuarded(ctx, options) {
+      const previous = setTruncateWidgetValuesFirst(true);
+      try {
+        return originalDrawWidget.call(this, ctx, options);
+      } finally {
+        if (previous !== undefined) setTruncateWidgetValuesFirst(previous);
+      }
+    };
+  }
+  const originalDraw = widget.draw;
+  if (typeof originalDraw === "function") {
+    widget.draw = function drawGuarded() {
+      const previous = setTruncateWidgetValuesFirst(true);
+      try {
+        return originalDraw.apply(this, arguments);
+      } finally {
+        if (previous !== undefined) setTruncateWidgetValuesFirst(previous);
+      }
+    };
+  }
+}
+
+function installLabelSafeWidgets(node) {
+  if (Array.isArray(node.size) && node.size[0] < DOUBAO_MIN_NODE_WIDTH) {
+    node.size[0] = DOUBAO_MIN_NODE_WIDTH;
+  }
+  if (!node._doubaoLabelSafe) {
+    node._doubaoLabelSafe = true;
+    const originalOnResize = node.onResize;
+    node.onResize = function onResizeGuarded(size) {
+      if (size?.[0] < DOUBAO_MIN_NODE_WIDTH) size[0] = DOUBAO_MIN_NODE_WIDTH;
+      if (this.size?.[0] < DOUBAO_MIN_NODE_WIDTH) this.size[0] = DOUBAO_MIN_NODE_WIDTH;
+      if (originalOnResize) originalOnResize.apply(this, arguments);
+      padOverlayInputs(this);
+    };
+  }
+  for (const widget of node.widgets || []) {
+    wrapWidgetDrawForLabels(widget);
+  }
+  padOverlayInputs(node);
 }
 
 function installMediaWidget(node, options) {
@@ -334,12 +501,38 @@ function installMediaWidget(node, options) {
   dropZone.className = "doubao-dropzone";
   dropZone.textContent = options.dropText;
 
+  const progressWrap = document.createElement("div");
+  progressWrap.className = "doubao-progress";
+  progressWrap.style.display = "none";
+  const progressBarOuter = document.createElement("div");
+  progressBarOuter.className = "doubao-progress-outer";
+  const progressBarInner = document.createElement("div");
+  progressBarInner.className = "doubao-progress-inner";
+  progressBarInner.style.width = "0%";
+  progressBarOuter.appendChild(progressBarInner);
+  const progressText = document.createElement("div");
+  progressText.className = "doubao-card-sub";
+  progressWrap.appendChild(progressBarOuter);
+  progressWrap.appendChild(progressText);
+
+  const hint = document.createElement("div");
+  hint.className = "doubao-hint";
+  if (options.hintText) {
+    hint.textContent = options.hintText;
+  } else {
+    hint.style.display = "none";
+  }
+
   const previewGrid = document.createElement("div");
   previewGrid.className = options.gridClass;
 
   container.appendChild(toolbar);
   container.appendChild(fileInput);
   container.appendChild(dropZone);
+  container.appendChild(progressWrap);
+  if (options.hintText) {
+    container.appendChild(hint);
+  }
   container.appendChild(previewGrid);
 
   const domWidget = node.addDOMWidget(`${options.kind}_uploader`, "doubao_media", container, {
@@ -402,6 +595,19 @@ function installMediaWidget(node, options) {
     const lines = state.pathItems.map((item) => item.path || "");
     pathWidget.value = options.multiple ? lines.join("\n") : lines[0] || "";
     node.setDirtyCanvas(true, true);
+  }
+
+  function setUploadProgress(percent, statusText = "") {
+    const safePercent = Math.max(0, Math.min(100, Math.round(percent)));
+    progressBarInner.style.width = `${safePercent}%`;
+    progressText.textContent = statusText || ui().uploadProgress(safePercent);
+    progressWrap.style.display = "block";
+  }
+
+  function hideUploadProgress() {
+    progressWrap.style.display = "none";
+    progressBarInner.style.width = "0%";
+    progressText.textContent = "";
   }
 
   function renderCards() {
@@ -546,7 +752,9 @@ function installMediaWidget(node, options) {
       current.splice(0, current.length);
     }
 
-    for (const file of incoming) {
+    const totalFiles = incoming.length;
+    setUploadProgress(0, ui().uploading);
+    for (const [index, file] of incoming.entries()) {
       const item = {
         name: file.name,
         size: file.size || 0,
@@ -554,8 +762,14 @@ function installMediaWidget(node, options) {
       };
       let uploadResult;
       try {
-        uploadResult = await uploadPathModeFile(file, options.kind);
+        uploadResult = await uploadPathModeFile(file, options.kind, {
+          onProgress: (filePercent) => {
+            const overall = ((index + filePercent / 100) / totalFiles) * 100;
+            setUploadProgress(overall);
+          },
+        });
       } catch (error) {
+        setUploadProgress(0, error.message || ui().pathUploadFailed);
         notifyError(error.message || ui().pathUploadFailed);
         return;
       }
@@ -567,6 +781,7 @@ function installMediaWidget(node, options) {
       current.push(item);
     }
 
+    setUploadProgress(100, ui().uploadComplete);
     syncWidgets();
     renderCards();
   }
@@ -576,6 +791,7 @@ function installMediaWidget(node, options) {
     state.pathItems.splice(0, state.pathItems.length);
     syncWidgets();
     renderCards();
+    hideUploadProgress();
   }
 
   function hydrateFromWidgets() {
@@ -586,6 +802,7 @@ function installMediaWidget(node, options) {
       size: 0,
       mime: options.fallbackMime,
     }));
+    hideUploadProgress();
     renderCards();
   }
 
@@ -668,6 +885,10 @@ function installVideoInputMode(node, mediaCtl) {
   const prefixWidget = findWidget(node, "TOS_Prefix");
   if (!modeWidget || !mediaCtl) return;
 
+  toggleWidgetVisibility(findWidget(node, "fps"), false);
+  const fpsWidget = findWidget(node, "fps");
+  if (fpsWidget) fpsWidget.value = 1.0;
+
   node._doubaoVideoMaxBytes = 512 * MB;
 
   function applyVideoMode(options = {}) {
@@ -692,6 +913,7 @@ function installVideoInputMode(node, mediaCtl) {
     toggleWidgetVisibility(urlWidget, showUrl);
     toggleWidgetVisibility(bucketWidget, showBucket);
     toggleWidgetVisibility(prefixWidget, showBucket);
+    toggleWidgetVisibility(findWidget(node, "fps"), false);
     mediaCtl.setUploaderVisible(showUploader);
 
     if (mode === VIDEO_MODE_TOS_BUCKET) {
@@ -742,6 +964,9 @@ function installModelPresetBinding(node) {
 
 app.registerExtension({
   name: "comfyui.doubao.api.multimodal.widgets",
+  setup() {
+    setTruncateWidgetValuesFirst(true);
+  },
   beforeRegisterNodeDef(nodeType, nodeData) {
     if (nodeData.name === "DoubaoVideoUpload") {
       const originalOnConfigure = nodeType.prototype.onConfigure;
@@ -758,6 +983,9 @@ app.registerExtension({
     nodeType.prototype.onNodeCreated = function onNodeCreated() {
       const result = originalOnNodeCreated ? originalOnNodeCreated.apply(this, arguments) : undefined;
 
+      if (DOUBAO_NODE_NAMES.has(nodeData.name)) {
+        injectStyles();
+      }
       if (nodeData.name === "DoubaoModelConfig") {
         installModelPresetBinding(this);
       }
@@ -770,6 +998,7 @@ app.registerExtension({
           pathField: "图片路径列表",
           pickButtonText: ui().pickImage,
           dropText: ui().dropImages,
+          hintText: ui().imageLimitHint,
           gridClass: "doubao-grid",
           minWidgetHeight: 180,
         });
@@ -798,9 +1027,14 @@ app.registerExtension({
           pathField: "文件路径",
           pickButtonText: ui().pickFile,
           dropText: ui().dropFile,
+          hintText: ui().fileLimitHint,
           gridClass: "doubao-grid doubao-grid-1",
           minWidgetHeight: 160,
         });
+      }
+
+      if (DOUBAO_NODE_NAMES.has(nodeData.name)) {
+        installLabelSafeWidgets(this);
       }
 
       return result;

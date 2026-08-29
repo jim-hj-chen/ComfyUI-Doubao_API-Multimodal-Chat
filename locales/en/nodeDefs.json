@@ -33,6 +33,10 @@
       "top_p": {
         "name": "Top P",
         "tooltip": "Nucleus sampling (0.0–1.0)"
+      },
+      "timeout_seconds": {
+        "name": "Timeout (seconds)",
+        "tooltip": "Request timeout (60–600s) for uploads, file-status polling, and response calls"
       }
     },
     "outputs": {
@@ -64,7 +68,7 @@
     "inputs": {
       "图片路径列表": {
         "name": "Image Paths",
-        "tooltip": "One absolute image path per line. The upload UI fills this automatically."
+        "tooltip": "Up to 9 images, 512MB each. One absolute path per line; the upload UI fills this automatically."
       }
     },
     "outputs": {
@@ -102,10 +106,6 @@
       "TOS_Prefix": {
         "name": "TOS Prefix",
         "tooltip": "Optional object key prefix"
-      },
-      "fps": {
-        "name": "FPS",
-        "tooltip": "Video preprocessing FPS (0.2–5.0)"
       }
     },
     "outputs": {
@@ -121,7 +121,7 @@
     "inputs": {
       "文件路径": {
         "name": "File Path",
-        "tooltip": "Absolute path of a local document. The upload UI fills this automatically."
+        "tooltip": "A single document, max 512MB. The upload UI fills this automatically."
       }
     },
     "outputs": {

@@ -41,6 +41,7 @@ class ConfigType(TypedDict):
     max_tokens: int
     temperature: float
     top_p: float
+    timeout_seconds: int
 
 
 class MediaItem(TypedDict, total=False):

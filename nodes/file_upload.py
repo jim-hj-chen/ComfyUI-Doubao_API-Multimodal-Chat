@@ -30,7 +30,14 @@ class DoubaoFileUpload:
     def INPUT_TYPES(cls) -> Dict[str, Dict[str, tuple]]:
         return {
             "required": {
-                "文件路径": ("STRING", {"default": "", "multiline": False}),
+                "文件路径": (
+                    "STRING",
+                    {
+                        "default": "",
+                        "multiline": False,
+                        "tooltip": "单个文档，文件大小不能超过 512MB。选择或拖拽上传后会自动回填路径。",
+                    },
+                ),
             }
         }
 

@@ -32,7 +32,14 @@ class DoubaoImageUpload:
     def INPUT_TYPES(cls) -> Dict[str, Dict[str, tuple]]:
         return {
             "required": {
-                "图片路径列表": ("STRING", {"default": "", "multiline": True}),
+                "图片路径列表": (
+                    "STRING",
+                    {
+                        "default": "",
+                        "multiline": True,
+                        "tooltip": "最多 9 张，单张文件大小不能超过 512MB。选择或拖拽上传后会自动回填路径。",
+                    },
+                ),
             }
         }
 

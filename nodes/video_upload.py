@@ -21,6 +21,7 @@ VIDEO_MAX_TOS_BYTES = 2 * 1024 * 1024 * 1024
 VIDEO_MODE_LOCAL = "本地上传（≤512MB）"
 VIDEO_MODE_TOS_BUCKET = "TOS 对象存储上传（≤2GB）"
 VIDEO_MODE_TOS_URL = "已有 TOS 视频地址"
+VIDEO_DEFAULT_FPS = 1.0
 
 
 class DoubaoVideoUpload:
@@ -64,7 +65,6 @@ class DoubaoVideoUpload:
                         "placeholder": "可选对象前缀",
                     },
                 ),
-                "fps": ("FLOAT", {"default": 1.0, "min": 0.2, "max": 5.0, "step": 0.1}),
             }
         }
 
@@ -75,15 +75,15 @@ class DoubaoVideoUpload:
         TOS视频URL: str = "",  # noqa: N803
         TOS_Bucket: str = "",  # noqa: N803,N802
         TOS_Prefix: str = "",  # noqa: N803,N802
-        fps: float = 1.0,
+        fps: float = VIDEO_DEFAULT_FPS,
     ) -> Tuple[VideoType]:
+        _ = fps
         item = self._build_video_item(
             mode=输入方式,
             path_text=视频文件路径,
             tos_video_url=TOS视频URL,
             tos_bucket=TOS_Bucket,
             tos_prefix=TOS_Prefix,
-            fps=fps,
         )
         return ({"item": item},)
 
@@ -94,17 +94,15 @@ class DoubaoVideoUpload:
         tos_video_url: str,
         tos_bucket: str,
         tos_prefix: str,
-        fps: float,
     ) -> dict:
         mode_text = (mode or VIDEO_MODE_LOCAL).strip()
         if mode_text == VIDEO_MODE_TOS_URL:
-            return self._build_tos_url_item(tos_video_url, fps)
+            return self._build_tos_url_item(tos_video_url)
         if mode_text == VIDEO_MODE_TOS_BUCKET:
             return self._build_local_file_item(
                 path_text=path_text,
                 tos_bucket=tos_bucket,
                 tos_prefix=tos_prefix,
-                fps=fps,
                 require_bucket=True,
                 max_bytes=VIDEO_MAX_TOS_BYTES,
             )
@@ -112,12 +110,11 @@ class DoubaoVideoUpload:
             path_text=path_text,
             tos_bucket="",
             tos_prefix="",
-            fps=fps,
             require_bucket=False,
             max_bytes=VIDEO_MAX_FILES_API_BYTES,
         )
 
-    def _build_tos_url_item(self, tos_video_url: str, fps: float) -> dict:
+    def _build_tos_url_item(self, tos_video_url: str) -> dict:
         url = tos_video_url.strip()
         if not url:
             raise ValueError("请填写“TOS 视频地址”，须以 tos:// 开头。")
@@ -128,7 +125,7 @@ class DoubaoVideoUpload:
             "mime_type": "video/mp4",
             "file_name": url.rsplit("/", 1)[-1] or "video.mp4",
             "file_size": 0,
-            "fps": float(fps),
+            "fps": VIDEO_DEFAULT_FPS,
         }
 
     def _build_local_file_item(
@@ -136,7 +133,6 @@ class DoubaoVideoUpload:
         path_text: str,
         tos_bucket: str,
         tos_prefix: str,
-        fps: float,
         require_bucket: bool,
         max_bytes: int,
     ) -> dict:
@@ -154,7 +150,7 @@ class DoubaoVideoUpload:
             "mime_type": guess_mime_type(file_path, "video/mp4"),
             "file_name": file_path.name,
             "file_size": size,
-            "fps": float(fps),
+            "fps": VIDEO_DEFAULT_FPS,
         }
         if tos_bucket.strip():
             item["tos_bucket"] = tos_bucket.strip()

@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import logging
 import time
+from hashlib import sha256
+from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Tuple
 
 import requests
@@ -13,6 +15,7 @@ from .type_defs import StreamResult
 
 
 LOGGER = logging.getLogger("comfyui_doubao.api_client")
+LOCAL_FILE_ID_CACHE: Dict[str, Dict[str, Any]] = {}
 
 
 class DoubaoApiError(RuntimeError):
@@ -63,6 +66,20 @@ class DoubaoApiClient:
         if has_file_path == has_source_url:
             raise DoubaoApiError("上传参数错误：必须二选一提供 file_path 或 source_url。")
 
+        cache_key: Optional[str] = None
+        if has_file_path:
+            cache_key = build_local_file_cache_key(
+                path_text=(file_path or "").strip(),
+                purpose=purpose,
+                preprocess_configs=preprocess_configs,
+                tos=tos,
+            )
+            if cache_key:
+                cached_file_id = get_cached_file_id(cache_key)
+                if cached_file_id:
+                    LOGGER.info("命中本地文件缓存: %s -> %s", (file_path or "").strip(), cached_file_id)
+                    return {"file_id": cached_file_id, "raw": {"id": cached_file_id, "cached": True}}
+
         url = f"{self.base_url}/files"
         form_data: Dict[str, str] = {"purpose": purpose}
         if preprocess_configs:
@@ -99,6 +116,8 @@ class DoubaoApiClient:
                     raise DoubaoApiError(f"上传响应缺少 file_id：{data}")
                 source_desc = (source_url or "").strip() if has_source_url else (file_path or "").strip()
                 LOGGER.info("文件上传成功: %s -> %s", source_desc, file_id)
+                if cache_key and not has_source_url:
+                    set_cached_file_id(cache_key, file_id)
                 return {"file_id": file_id, "raw": data}
             except Exception as error:  # pylint: disable=broad-except
                 last_error = error
@@ -230,6 +249,50 @@ def _flatten_form_data(prefix: str, value: Any) -> Dict[str, str]:
     else:
         flattened[prefix] = str(value)
     return flattened
+
+
+def build_local_file_cache_key(
+    path_text: str,
+    purpose: str,
+    preprocess_configs: Optional[Dict[str, Any]] = None,
+    tos: Optional[Dict[str, str]] = None,
+) -> Optional[str]:
+    """根据本地路径与元信息构建稳定缓存 key。"""
+    try:
+        path = Path(path_text).expanduser().resolve()
+        stat = path.stat()
+    except OSError:
+        return None
+
+    signature = {
+        "path": str(path),
+        "size": int(stat.st_size),
+        "mtime_ns": int(getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1e9))),
+        "purpose": (purpose or "").strip(),
+        "preprocess_configs": preprocess_configs or {},
+        "tos": {key: value for key, value in (tos or {}).items() if (value or "").strip()},
+    }
+    payload = json.dumps(signature, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return sha256(payload.encode("utf-8")).hexdigest()
+
+
+def get_cached_file_id(cache_key: str) -> Optional[str]:
+    """读取缓存 file_id。"""
+    entry = LOCAL_FILE_ID_CACHE.get(cache_key)
+    if not entry:
+        return None
+    file_id = entry.get("file_id")
+    if not isinstance(file_id, str) or not file_id.strip():
+        return None
+    return file_id.strip()
+
+
+def set_cached_file_id(cache_key: str, file_id: str) -> None:
+    """写入缓存 file_id。"""
+    LOCAL_FILE_ID_CACHE[cache_key] = {
+        "file_id": file_id.strip(),
+        "updated_at": time.time(),
+    }
 
 
 def _extract_output_text(response_json: Dict[str, Any]) -> str:

@@ -29,6 +29,7 @@ class DoubaoModelConfig:
                 "max_tokens": ("INT", {"default": 1024, "min": 1, "max": 4096, "step": 1}),
                 "temperature": ("FLOAT", {"default": 0.7, "min": 0.0, "max": 2.0, "step": 0.01}),
                 "top_p": ("FLOAT", {"default": 0.9, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "timeout_seconds": ("INT", {"default": 180, "min": 60, "max": 600, "step": 1}),
             }
         }
 
@@ -41,6 +42,7 @@ class DoubaoModelConfig:
         max_tokens: int,
         temperature: float,
         top_p: float,
+        timeout_seconds: int,
     ) -> Tuple[dict]:
         _ = MODEL_PRESET_TO_ID.get(模型预设, "doubao-seed-evolving")
         if not api_key.strip():
@@ -55,5 +57,6 @@ class DoubaoModelConfig:
             "max_tokens": int(max_tokens),
             "temperature": float(temperature),
             "top_p": float(top_p),
+            "timeout_seconds": int(timeout_seconds),
         }
         return (config,)

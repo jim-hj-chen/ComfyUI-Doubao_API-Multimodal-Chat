@@ -6,11 +6,12 @@ import json
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 
-from ..utils.api_client import DoubaoApiClient
+from ..utils.api_client import DoubaoApiClient, DoubaoApiError
 from ..utils.type_defs import ConfigType, FileType, ImageListType, VideoType
 
 
 LOGGER = logging.getLogger("comfyui_doubao.doubao_run")
+DEFAULT_TIMEOUT_SECONDS = 180
 
 
 class DoubaoRun:
@@ -51,7 +52,7 @@ class DoubaoRun:
         client = DoubaoApiClient(
             base_url=config["base_url"],
             api_key=config["api_key"],
-            timeout_seconds=60,
+            timeout_seconds=int(config.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS)),
             max_retries=3,
         )
 
@@ -98,7 +99,10 @@ class DoubaoRun:
     ) -> List[Dict[str, Any]]:
         contents: List[Dict[str, Any]] = []
         for item in images.get("items", []):
-            uploaded = client.upload_file(item["path"])
+            try:
+                uploaded = client.upload_file(item["path"])
+            except DoubaoApiError as error:
+                raise ValueError(f"上传到 Doubao Files API 失败（图片）：{error}") from error
             contents.append({"type": "input_image", "file_id": uploaded["file_id"]})
         return contents
 
@@ -108,8 +112,14 @@ class DoubaoRun:
         client: DoubaoApiClient,
     ) -> List[Dict[str, Any]]:
         item = video.get("item", {})
-        uploaded = client.upload_file(**self._build_video_upload_kwargs(item))
-        client.wait_for_file_ready(uploaded["file_id"])
+        try:
+            uploaded = client.upload_file(**self._build_video_upload_kwargs(item))
+        except DoubaoApiError as error:
+            raise ValueError(f"上传到 Doubao Files API 失败（视频）：{error}") from error
+        try:
+            client.wait_for_file_ready(uploaded["file_id"])
+        except DoubaoApiError as error:
+            raise ValueError(f"等待 Doubao 文件处理失败（视频）：{error}") from error
         return [{"type": "input_video", "file_id": uploaded["file_id"]}]
 
     def _build_video_upload_kwargs(self, item: Dict[str, Any]) -> Dict[str, Any]:
@@ -136,8 +146,14 @@ class DoubaoRun:
         client: DoubaoApiClient,
     ) -> List[Dict[str, Any]]:
         item = file_data.get("item", {})
-        uploaded = client.upload_file(item["path"])
-        client.wait_for_file_ready(uploaded["file_id"])
+        try:
+            uploaded = client.upload_file(item["path"])
+        except DoubaoApiError as error:
+            raise ValueError(f"上传到 Doubao Files API 失败（文档）：{error}") from error
+        try:
+            client.wait_for_file_ready(uploaded["file_id"])
+        except DoubaoApiError as error:
+            raise ValueError(f"等待 Doubao 文件处理失败（文档）：{error}") from error
         return [{"type": "input_file", "file_id": uploaded["file_id"]}]
 
     def _validate_config(self, config: ConfigType) -> None:
@@ -147,3 +163,6 @@ class DoubaoRun:
                 raise ValueError(f"配置缺少必要字段：{key}")
         if not config["api_key"].strip():
             raise ValueError("API Key 不能为空。")
+        timeout_seconds = int(config.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS))
+        if timeout_seconds < 1:
+            raise ValueError("timeout_seconds 必须为正整数。")
