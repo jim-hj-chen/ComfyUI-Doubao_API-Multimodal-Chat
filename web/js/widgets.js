@@ -13,12 +13,17 @@ const MB = 1024 * 1024;
 const NODE_TITLE_HEIGHT = 30;
 const NODE_SIDE_PADDING = 20;
 const NODE_BOTTOM_PADDING = 12;
+const MEDIA_CARD_WIDTH = 152;
+const MEDIA_CARD_GAP = 14;
+const MEDIA_DEFAULT_COLUMNS = 3;
 const DOUBAO_MIN_NODE_WIDTH = 360;
-const DOUBAO_MEDIA_MIN_WIDTH = {
-  image: 360,
-  video: 400,
-  file: 360,
-};
+const DOUBAO_MEDIA_NODE_WIDTH =
+  MEDIA_CARD_WIDTH * MEDIA_DEFAULT_COLUMNS +
+  MEDIA_CARD_GAP * (MEDIA_DEFAULT_COLUMNS - 1) +
+  NODE_SIDE_PADDING +
+  32;
+const DOUBAO_MEDIA_NODE_HEIGHT = 420;
+const DOUBAO_MEDIA_MIN_WIDGET_HEIGHT = 320;
 const VIDEO_MODE_LOCAL = "本地上传（≤512MB）";
 const VIDEO_MODE_TOS_BUCKET = "TOS 对象存储上传（≤2GB）";
 const VIDEO_MODE_TOS_URL = "已有 TOS 视频地址";
@@ -122,6 +127,18 @@ function toggleWidgetVisibility(widget, visible) {
     : () => [0, -4];
 }
 
+function hideDoubaoRunTextWidgets(node) {
+  for (const name of ["stream", "system_prompt", "user_prompt", "text"]) {
+    const widget = findWidget(node, name);
+    if (!widget) continue;
+    const hasInput = node.inputs?.some((input) => input.name === name);
+    if (name !== "stream" && !hasInput && typeof node.convertWidgetToInput === "function") {
+      node.convertWidgetToInput(widget);
+    }
+    toggleWidgetVisibility(findWidget(node, name), false);
+  }
+}
+
 function formatBytes(sizeBytes) {
   if (!sizeBytes) return "0 B";
   const units = ["B", "KB", "MB", "GB"];
@@ -144,9 +161,10 @@ function notifyError(message) {
 }
 
 function injectStyles() {
-  const styleId = "doubao-media-style-v2";
-  const previous = document.getElementById("doubao-media-style");
-  if (previous) previous.remove();
+  const styleId = "doubao-media-style-v4";
+  document.getElementById("doubao-media-style")?.remove();
+  document.getElementById("doubao-media-style-v2")?.remove();
+  document.getElementById("doubao-media-style-v3")?.remove();
   if (document.getElementById(styleId)) return;
   const style = document.createElement("style");
   style.id = styleId;
@@ -210,7 +228,12 @@ function injectStyles() {
       flex-shrink: 0;
       display: flex;
       flex-direction: column;
+      justify-content: center;
       gap: 4px;
+      min-height: 32px;
+    }
+    .doubao-progress:not(.is-active) {
+      visibility: hidden;
     }
     .doubao-progress-outer {
       width: 100%;
@@ -224,6 +247,12 @@ function injectStyles() {
       height: 100%;
       background: #7aa2f7;
       transition: width 120ms ease-out;
+    }
+    .doubao-progress-text {
+      min-height: 1.3em;
+      font-size: 11px;
+      line-height: 1.3;
+      color: #aeb6c2;
     }
     /* Vue / DOM widgets: keep the title column, clip the value instead of overlapping. */
     .lg-node-widget,
@@ -252,8 +281,9 @@ function injectStyles() {
       align-content: start;
     }
     .doubao-grid-1 { grid-template-columns: 1fr; }
-    .doubao-grid-images {
-      grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+    .doubao-grid-cards {
+      grid-template-columns: repeat(auto-fill, 152px);
+      justify-content: start;
       gap: 14px;
     }
     .doubao-card {
@@ -266,38 +296,57 @@ function injectStyles() {
       min-width: 0;
       cursor: pointer;
     }
-    .doubao-card img,.doubao-card video {
+    .doubao-card > img,
+    .doubao-card > video {
       width: 100%;
       height: auto;
       aspect-ratio: 16 / 10;
       object-fit: cover;
       display: block;
     }
-    .doubao-grid-images .doubao-card {
+    .doubao-grid-cards .doubao-card {
+      width: 152px;
+      max-width: 152px;
       height: 200px;
       min-height: 200px;
       max-height: 200px;
       display: flex;
       flex-direction: column;
+      overflow: hidden;
     }
     .doubao-thumb {
       position: relative;
       flex: 0 0 120px;
       width: 100%;
       height: 120px;
+      max-height: 120px;
       overflow: hidden;
       background: #161b26;
     }
-    .doubao-grid-images .doubao-thumb img {
+    .doubao-thumb-file {
       width: 100%;
       height: 100%;
-      aspect-ratio: auto;
-      object-fit: cover;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      color: #d8dee9;
+    }
+    .doubao-grid-cards .doubao-thumb img,
+    .doubao-grid-cards .doubao-thumb video {
+      width: 100% !important;
+      height: 120px !important;
+      max-height: 120px !important;
+      aspect-ratio: unset !important;
+      object-fit: cover !important;
       object-position: center;
       display: block;
     }
     .doubao-card-body {
       flex: 0 0 60px;
+      width: 100%;
       height: 60px;
       min-width: 0;
       padding: 8px 10px;
@@ -307,41 +356,53 @@ function injectStyles() {
       gap: 4px;
       text-align: left;
       box-sizing: border-box;
+      overflow: hidden;
     }
     .doubao-card-title { padding: 8px; font-size: 12px; color: #eceff4; word-break: break-all; }
-    .doubao-grid-images .doubao-card-title {
+    .doubao-grid-cards .doubao-card-body .doubao-card-title {
       padding: 0;
+      max-width: 100%;
       line-height: 1.3;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      word-break: normal;
+      word-break: keep-all;
     }
     .doubao-card-sub { padding: 0 8px 8px; font-size: 11px; color: #aeb6c2; }
-    .doubao-grid-images .doubao-card-sub {
+    .doubao-grid-cards .doubao-card-body .doubao-card-sub {
       padding: 0;
       line-height: 1.25;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .doubao-remove {
       position: absolute;
       top: 6px;
       right: 6px;
-      width: 20px;
-      height: 20px;
+      z-index: 2;
+      box-sizing: border-box;
+      width: 22px;
+      height: 22px;
       border: none;
       border-radius: 50%;
-      background: rgba(0, 0, 0, 0.4);
-      color: rgba(255, 255, 255, 0.88);
+      appearance: none;
+      -webkit-appearance: none;
+      background: rgba(0, 0, 0, 0.55);
+      color: #fff;
       font-size: 14px;
-      line-height: 20px;
+      line-height: 22px;
       padding: 0;
       cursor: pointer;
-      opacity: 0.72;
-      transition: background 120ms ease, opacity 120ms ease, color 120ms ease;
+      opacity: 0.78;
+      transition: background 120ms ease, opacity 120ms ease;
+    }
+    .doubao-grid-cards .doubao-remove {
+      background: rgba(0, 0, 0, 0.55) !important;
+      color: #fff !important;
     }
     .doubao-remove:hover {
-      background: rgba(0, 0, 0, 0.78);
-      color: #fff;
+      background: rgba(0, 0, 0, 0.85) !important;
       opacity: 1;
     }
     .doubao-modal {
@@ -468,7 +529,15 @@ function refreshNodeLayout(node) {
   if (typeof node.computeSize === "function") {
     const nextSize = node.computeSize(node.size);
     if (Array.isArray(nextSize) && nextSize.length >= 2) {
-      node.setSize([node.size?.[0] ?? nextSize[0], nextSize[1]]);
+      const minWidth = getNodeMinWidth(node);
+      const minHeight = getNodeMinHeight(node);
+      const width = Math.max(node.size?.[0] || 0, nextSize[0], minWidth);
+      const height = Math.max(node.size?.[1] || 0, nextSize[1], minHeight);
+      if (typeof node.setSize === "function") {
+        node.setSize([width, height]);
+      } else {
+        node.size = [width, height];
+      }
     }
   }
   node.setDirtyCanvas(true, true);
@@ -487,13 +556,27 @@ function getNodeMinWidth(node) {
   return Number(node?._doubaoMinWidth) || DOUBAO_MIN_NODE_WIDTH;
 }
 
-function ensureNodeMinWidth(node, minWidth = getNodeMinWidth(node)) {
+function getNodeMinHeight(node) {
+  return Number(node?._doubaoMinHeight) || 0;
+}
+
+function ensureNodeMinSize(node) {
   if (!Array.isArray(node.size) || node.size.length < 2) return;
-  if (node.size[0] >= minWidth) return;
-  node.size[0] = minWidth;
+  const minWidth = getNodeMinWidth(node);
+  const minHeight = getNodeMinHeight(node);
+  const width = Math.max(node.size[0] || 0, minWidth);
+  const height = minHeight ? Math.max(node.size[1] || 0, minHeight) : node.size[1];
+  if (width === node.size[0] && height === node.size[1]) return;
+  node.size[0] = width;
+  node.size[1] = height;
   if (typeof node.setSize === "function") {
-    node.setSize([minWidth, node.size[1]]);
+    node.setSize([width, height]);
   }
+}
+
+function ensureNodeMinWidth(node, minWidth = getNodeMinWidth(node)) {
+  if (minWidth) node._doubaoMinWidth = Math.max(Number(node._doubaoMinWidth) || 0, minWidth);
+  ensureNodeMinSize(node);
 }
 
 function setTruncateWidgetValuesFirst(enabled) {
@@ -558,15 +641,18 @@ function installLabelSafeWidgets(node) {
     const originalOnResize = node.onResize;
     node.onResize = function onResizeGuarded(size) {
       const minWidth = getNodeMinWidth(this);
+      const minHeight = getNodeMinHeight(this);
       if (size?.[0] < minWidth) size[0] = minWidth;
+      if (minHeight && size?.[1] < minHeight) size[1] = minHeight;
       if (this.size?.[0] < minWidth) this.size[0] = minWidth;
+      if (minHeight && this.size?.[1] < minHeight) this.size[1] = minHeight;
       if (originalOnResize) originalOnResize.apply(this, arguments);
       padOverlayInputs(this);
     };
     const originalOnConfigure = node.onConfigure;
     node.onConfigure = function onConfigureGuarded() {
       const result = originalOnConfigure ? originalOnConfigure.apply(this, arguments) : undefined;
-      ensureNodeMinWidth(this);
+      ensureNodeMinSize(this);
       padOverlayInputs(this);
       return result;
     };
@@ -590,8 +676,9 @@ function installMediaWidget(node, options) {
   injectStyles();
   const pathWidget = findWidget(node, options.pathField);
   if (!pathWidget) return null;
-  node._doubaoMinWidth = options.minNodeWidth || DOUBAO_MEDIA_MIN_WIDTH[options.kind] || DOUBAO_MIN_NODE_WIDTH;
-  ensureNodeMinWidth(node);
+  node._doubaoMinWidth = options.minNodeWidth || DOUBAO_MEDIA_NODE_WIDTH;
+  node._doubaoMinHeight = options.minNodeHeight || DOUBAO_MEDIA_NODE_HEIGHT;
+  ensureNodeMinSize(node);
 
   const state = {
     pathItems: [],
@@ -625,7 +712,6 @@ function installMediaWidget(node, options) {
 
   const progressWrap = document.createElement("div");
   progressWrap.className = "doubao-progress";
-  progressWrap.style.display = "none";
   const progressBarOuter = document.createElement("div");
   progressBarOuter.className = "doubao-progress-outer";
   const progressBarInner = document.createElement("div");
@@ -633,7 +719,7 @@ function installMediaWidget(node, options) {
   progressBarInner.style.width = "0%";
   progressBarOuter.appendChild(progressBarInner);
   const progressText = document.createElement("div");
-  progressText.className = "doubao-card-sub";
+  progressText.className = "doubao-progress-text";
   progressWrap.appendChild(progressBarOuter);
   progressWrap.appendChild(progressText);
 
@@ -686,7 +772,7 @@ function installMediaWidget(node, options) {
 
   function applyMediaLayout() {
     const minWidth = getNodeMinWidth(node);
-    ensureNodeMinWidth(node, minWidth);
+    ensureNodeMinSize(node);
     const nodeWidth = node.size?.[0] ?? minWidth;
     const innerWidth = Math.max(0, nodeWidth - NODE_SIDE_PADDING);
     const [, height] = computeMediaSize(nodeWidth);
@@ -730,7 +816,7 @@ function installMediaWidget(node, options) {
     const safePercent = Math.max(0, Math.min(100, Math.round(percent)));
     progressBarInner.style.width = `${safePercent}%`;
     progressText.textContent = statusText || ui().uploadProgress(safePercent);
-    progressWrap.style.display = "block";
+    progressWrap.classList.add("is-active");
   }
 
   function hideUploadProgress() {
@@ -738,7 +824,7 @@ function installMediaWidget(node, options) {
       clearTimeout(progressHideTimer);
       progressHideTimer = null;
     }
-    progressWrap.style.display = "none";
+    progressWrap.classList.remove("is-active");
     progressBarInner.style.width = "0%";
     progressText.textContent = "";
   }
@@ -750,7 +836,6 @@ function installMediaWidget(node, options) {
     progressHideTimer = setTimeout(() => {
       progressHideTimer = null;
       hideUploadProgress();
-      refreshNodeLayout(node);
     }, delayMs);
   }
 
@@ -765,10 +850,7 @@ function installMediaWidget(node, options) {
       const card = document.createElement("div");
       card.className = "doubao-card";
       const displayName = item.name || ui().fileN(index);
-      const isImageCard = options.kind === "image";
-      if (isImageCard) {
-        card.title = displayName;
-      }
+      card.title = displayName;
 
       const removeBtn = document.createElement("button");
       removeBtn.className = "doubao-remove";
@@ -782,49 +864,40 @@ function installMediaWidget(node, options) {
         renderCards();
       });
 
-      if (isImageCard) {
-        const thumb = document.createElement("div");
-        thumb.className = "doubao-thumb";
-        if (item.previewUrl) {
-          const img = document.createElement("img");
-          img.src = item.previewUrl;
-          img.alt = displayName;
-          thumb.appendChild(img);
-        }
-        thumb.appendChild(removeBtn);
-        card.appendChild(thumb);
-
-        const body = document.createElement("div");
-        body.className = "doubao-card-body";
-        const title = document.createElement("div");
-        title.className = "doubao-card-title";
-        title.textContent = displayName;
-        const sub = document.createElement("div");
-        sub.className = "doubao-card-sub";
-        sub.textContent = formatExtAndSize(displayName, item.size || 0);
-        body.appendChild(title);
-        body.appendChild(sub);
-        card.appendChild(body);
+      const thumb = document.createElement("div");
+      thumb.className = "doubao-thumb";
+      if (options.kind === "image" && item.previewUrl) {
+        const img = document.createElement("img");
+        img.src = item.previewUrl;
+        img.alt = displayName;
+        thumb.appendChild(img);
+      } else if (options.kind === "video" && item.previewUrl) {
+        const video = document.createElement("video");
+        video.src = item.previewUrl;
+        video.muted = true;
+        video.playsInline = true;
+        video.preload = "metadata";
+        thumb.appendChild(video);
       } else {
-        if (options.kind === "video" && item.previewUrl) {
-          const video = document.createElement("video");
-          video.src = item.previewUrl;
-          video.muted = true;
-          video.playsInline = true;
-          video.preload = "metadata";
-          card.appendChild(video);
-        }
-
-        const title = document.createElement("div");
-        title.className = "doubao-card-title";
-        title.textContent = displayName;
-        card.appendChild(title);
-        const sub = document.createElement("div");
-        sub.className = "doubao-card-sub";
-        sub.textContent = `${item.mime || "unknown"} | ${formatBytes(item.size || 0)}`;
-        card.appendChild(sub);
-        card.appendChild(removeBtn);
+        const badge = document.createElement("div");
+        badge.className = "doubao-thumb-file";
+        badge.textContent = fileExtensionLabel(displayName);
+        thumb.appendChild(badge);
       }
+      thumb.appendChild(removeBtn);
+      card.appendChild(thumb);
+
+      const body = document.createElement("div");
+      body.className = "doubao-card-body";
+      const title = document.createElement("div");
+      title.className = "doubao-card-title";
+      title.textContent = displayName;
+      const sub = document.createElement("div");
+      sub.className = "doubao-card-sub";
+      sub.textContent = formatExtAndSize(displayName, item.size || 0);
+      body.appendChild(title);
+      body.appendChild(sub);
+      card.appendChild(body);
 
       if (options.kind === "image") {
         card.draggable = true;
@@ -1014,8 +1087,12 @@ function installMediaWidget(node, options) {
 
   toggleWidgetVisibility(pathWidget, false);
   hydrateFromWidgets();
+  ensureNodeMinSize(node);
   applyMediaLayout();
-  requestAnimationFrame(() => applyMediaLayout());
+  requestAnimationFrame(() => {
+    ensureNodeMinSize(node);
+    applyMediaLayout();
+  });
 
   return {
     applyMediaLayout,
@@ -1153,6 +1230,25 @@ app.registerExtension({
     setTruncateWidgetValuesFirst(true);
   },
   beforeRegisterNodeDef(nodeType, nodeData) {
+    if (nodeData.name === "DoubaoRun") {
+      const forcePromptInputs = (group) => {
+        if (!group) return;
+        for (const key of ["system_prompt", "user_prompt", "text"]) {
+          if (!group[key]) continue;
+          group[key][1] = { ...(group[key][1] || {}), forceInput: true, multiline: true };
+        }
+      };
+      forcePromptInputs(nodeData.input?.required);
+      forcePromptInputs(nodeData.input?.optional);
+
+      const originalOnConfigure = nodeType.prototype.onConfigure;
+      nodeType.prototype.onConfigure = function onConfigure() {
+        const result = originalOnConfigure ? originalOnConfigure.apply(this, arguments) : undefined;
+        hideDoubaoRunTextWidgets(this);
+        return result;
+      };
+    }
+
     if (nodeData.name === "DoubaoVideoUpload") {
       const originalOnConfigure = nodeType.prototype.onConfigure;
       nodeType.prototype.onConfigure = function onConfigure() {
@@ -1171,6 +1267,9 @@ app.registerExtension({
       if (DOUBAO_NODE_NAMES.has(nodeData.name)) {
         injectStyles();
       }
+      if (nodeData.name === "DoubaoRun") {
+        hideDoubaoRunTextWidgets(this);
+      }
       if (nodeData.name === "DoubaoModelConfig") {
         installModelPresetBinding(this);
       }
@@ -1183,9 +1282,10 @@ app.registerExtension({
           pathField: "图片路径列表",
           pickButtonText: ui().pickImage,
           dropText: ui().dropImages,
-          gridClass: "doubao-grid doubao-grid-images",
-          minWidgetHeight: 280,
-          minNodeWidth: DOUBAO_MEDIA_MIN_WIDTH.image,
+          gridClass: "doubao-grid doubao-grid-cards",
+          minWidgetHeight: DOUBAO_MEDIA_MIN_WIDGET_HEIGHT,
+          minNodeWidth: DOUBAO_MEDIA_NODE_WIDTH,
+          minNodeHeight: DOUBAO_MEDIA_NODE_HEIGHT,
         });
       }
       if (nodeData.name === "DoubaoVideoUpload") {
@@ -1197,9 +1297,10 @@ app.registerExtension({
           pathField: "视频文件路径",
           pickButtonText: ui().pickVideo,
           dropText: ui().dropVideoLocal,
-          gridClass: "doubao-grid doubao-grid-1",
-          minWidgetHeight: 160,
-          minNodeWidth: DOUBAO_MEDIA_MIN_WIDTH.video,
+          gridClass: "doubao-grid doubao-grid-cards",
+          minWidgetHeight: DOUBAO_MEDIA_MIN_WIDGET_HEIGHT,
+          minNodeWidth: DOUBAO_MEDIA_NODE_WIDTH,
+          minNodeHeight: DOUBAO_MEDIA_NODE_HEIGHT,
           getMaxBytes: () => this._doubaoVideoMaxBytes || 512 * MB,
         });
         installVideoInputMode(this, mediaCtl);
@@ -1213,14 +1314,16 @@ app.registerExtension({
           pathField: "文件路径",
           pickButtonText: ui().pickFile,
           dropText: ui().dropFile,
-          gridClass: "doubao-grid doubao-grid-1",
-          minWidgetHeight: 160,
-          minNodeWidth: DOUBAO_MEDIA_MIN_WIDTH.file,
+          gridClass: "doubao-grid doubao-grid-cards",
+          minWidgetHeight: DOUBAO_MEDIA_MIN_WIDGET_HEIGHT,
+          minNodeWidth: DOUBAO_MEDIA_NODE_WIDTH,
+          minNodeHeight: DOUBAO_MEDIA_NODE_HEIGHT,
         });
       }
 
       if (DOUBAO_NODE_NAMES.has(nodeData.name)) {
         installLabelSafeWidgets(this);
+        ensureNodeMinSize(this);
       }
 
       return result;

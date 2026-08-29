@@ -27,11 +27,10 @@ class DoubaoRun:
         return {
             "required": {
                 "config": ("CONFIG",),
-                "stream": ("BOOLEAN", {"default": False}),
-                "system_prompt": ("STRING", {"default": "", "multiline": True}),
             },
             "optional": {
-                "text": ("STRING",),
+                "system_prompt": ("STRING", {"forceInput": True, "default": "", "multiline": True}),
+                "user_prompt": ("STRING", {"forceInput": True, "default": "", "multiline": True}),
                 "images": ("IMAGE_LIST",),
                 "video": ("VIDEO",),
                 "file": ("FILE",),
@@ -41,9 +40,10 @@ class DoubaoRun:
     def run(
         self,
         config: ConfigType,
-        stream: bool = False,
+        stream: bool = False,  # 兼容旧工作流；界面已隐藏，始终按非流式请求
         system_prompt: str = "",
-        text: Optional[str] = None,
+        user_prompt: Optional[str] = None,
+        text: Optional[str] = None,  # 兼容旧工作流中的 text 输入
         images: Optional[ImageListType] = None,
         video: Optional[VideoType] = None,
         file: Optional[FileType] = None,
@@ -72,8 +72,9 @@ class DoubaoRun:
             user_content.extend(self._build_video_contents(video, client))
         if file:
             user_content.extend(self._build_file_contents(file, client))
-        if (text or "").strip():
-            user_content.append({"type": "input_text", "text": (text or "").strip()})
+        user_text = (user_prompt if user_prompt is not None else text) or ""
+        if user_text.strip():
+            user_content.append({"type": "input_text", "text": user_text.strip()})
 
         if not user_content:
             raise ValueError("请至少提供一种输入：文本、图片、视频或文档。")
@@ -87,8 +88,8 @@ class DoubaoRun:
             "top_p": float(config["top_p"]),
         }
 
-        LOGGER.info("请求模型: %s, stream=%s", config["model_id"], stream)
-        output_text, usage = client.create_response(payload=payload, stream=bool(stream))
+        LOGGER.info("请求模型: %s, stream=%s", config["model_id"], False)
+        output_text, usage = client.create_response(payload=payload, stream=False)
         usage_text = json.dumps(usage or {}, ensure_ascii=False)
         return output_text or "", usage_text
 

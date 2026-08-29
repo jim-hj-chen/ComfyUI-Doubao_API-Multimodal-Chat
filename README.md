@@ -43,7 +43,7 @@ pip install -r requirements.txt
 
 ### 2) DoubaoTextInput
 
-- `prompt`：多行文本输入
+- `prompt`：多行文本输入；输出可接到豆包运行的「系统提示词」或「用户提示词」
 
 ### 3) DoubaoImageUpload
 
@@ -97,9 +97,8 @@ pip install -r requirements.txt
 
 - 输入：
   - `config`（必填）
-  - `text` / `images` / `video` / `file`（可选）
-  - `system_prompt`（可选）
-  - `stream`（是否流式）
+  - `system_prompt` / `user_prompt`（可选，仅支持从豆包文本输入节点接入，本节点不可编辑）
+  - `images` / `video` / `file`（可选）
 - 行为：
   - 本地文件：先上传到 Files API，再在 Responses 请求中引用 `file_id`
   - 视频默认本地上传；大文件可选 TOS Bucket（≤2GB），或直接使用已有 `tos://` 地址
@@ -109,19 +108,19 @@ pip install -r requirements.txt
 ### 文本 + 图片
 
 `DoubaoModelConfig -> DoubaoRun(config)`  
-`DoubaoTextInput -> DoubaoRun(text)`  
+`DoubaoTextInput -> DoubaoRun(user_prompt)`（系统提示词同理接到 `system_prompt`）  
 `DoubaoImageUpload -> DoubaoRun(images)`
 
 ### 文本 + 视频
 
 `DoubaoModelConfig -> DoubaoRun(config)`  
-`DoubaoTextInput -> DoubaoRun(text)`  
+`DoubaoTextInput -> DoubaoRun(user_prompt)`  
 `DoubaoVideoUpload -> DoubaoRun(video)`
 
 ### 文本 + 文档
 
 `DoubaoModelConfig -> DoubaoRun(config)`  
-`DoubaoTextInput -> DoubaoRun(text)`  
+`DoubaoTextInput -> DoubaoRun(user_prompt)`  
 `DoubaoFileUpload -> DoubaoRun(file)`
 
 ## 常见问题

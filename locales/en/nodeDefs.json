@@ -48,17 +48,17 @@
   },
   "DoubaoTextInput": {
     "display_name": "Doubao Text Input",
-    "description": "Multiline text prompt for Doubao Run.",
+    "description": "Multiline prompt. Connect to Doubao Run System Prompt or User Prompt.",
     "inputs": {
       "prompt": {
         "name": "Prompt",
-        "tooltip": "User text sent to the model"
+        "tooltip": "Text content. Connect this node's output to System Prompt or User Prompt on Doubao Run."
       }
     },
     "outputs": {
       "0": {
         "name": "text",
-        "tooltip": "Prompt string"
+        "tooltip": "Prompt string for Doubao Run"
       }
     }
   },
@@ -145,11 +145,15 @@
       },
       "system_prompt": {
         "name": "System Prompt",
-        "tooltip": "Optional system instruction"
+        "tooltip": "Connect Doubao Text Input. System instruction; not edited on this node."
+      },
+      "user_prompt": {
+        "name": "User Prompt",
+        "tooltip": "Connect Doubao Text Input. User message; not edited on this node."
       },
       "text": {
-        "name": "text",
-        "tooltip": "Optional user text"
+        "name": "User Prompt",
+        "tooltip": "Legacy alias of User Prompt"
       },
       "images": {
         "name": "images",
