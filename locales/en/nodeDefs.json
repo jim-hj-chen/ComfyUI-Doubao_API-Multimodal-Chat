@@ -64,11 +64,11 @@
   },
   "DoubaoImageUpload": {
     "display_name": "Doubao Image Upload",
-    "description": "Build an image list from local paths (up to 9 images, 512MB each).",
+    "description": "Build an image list from local paths (up to 9 images, 512MB total).",
     "inputs": {
       "图片路径列表": {
         "name": "Image Paths",
-        "tooltip": "Up to 9 images, 512MB each. One absolute path per line; the upload UI fills this automatically."
+        "tooltip": "Up to 9 images, 512MB total (Doubao API processing limit). One absolute path per line; the upload UI fills this automatically."
       }
     },
     "outputs": {

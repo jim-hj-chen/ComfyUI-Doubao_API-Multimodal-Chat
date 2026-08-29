@@ -17,7 +17,7 @@ from ..utils.type_defs import ImageListType, MediaItem
 
 
 IMAGE_MAX_COUNT = 9
-IMAGE_MAX_PATH_BYTES = 512 * 1024 * 1024
+IMAGE_MAX_TOTAL_BYTES = 512 * 1024 * 1024
 
 
 class DoubaoImageUpload:
@@ -37,7 +37,7 @@ class DoubaoImageUpload:
                     {
                         "default": "",
                         "multiline": True,
-                        "tooltip": "最多 9 张，单张文件大小不能超过 512MB。选择或拖拽上传后会自动回填路径。",
+                        "tooltip": "最多 9 张，合计不超过 512MB（豆包 API 单次处理上限）。选择或拖拽上传后会自动回填路径。",
                     },
                 ),
             }
@@ -53,6 +53,7 @@ class DoubaoImageUpload:
             raise ValueError(f"图片数量超限：当前 {len(items)} 张，最多允许 {IMAGE_MAX_COUNT} 张。")
 
         total_bytes = sum(item["file_size"] for item in items)
+        ensure_max_size(total_bytes, IMAGE_MAX_TOTAL_BYTES, "图片合计")
         return ({"items": items, "total_bytes": total_bytes},)
 
     def _build_from_paths(self, raw_paths: str) -> List[MediaItem]:
@@ -64,7 +65,6 @@ class DoubaoImageUpload:
             file_path = ensure_file_exists(path_text)
             ensure_extension(file_path, IMAGE_EXTENSIONS, "图片")
             size = file_size_bytes(file_path)
-            ensure_max_size(size, IMAGE_MAX_PATH_BYTES, "图片")
             items.append(
                 {
                     "path": str(file_path),

@@ -13,6 +13,12 @@ const MB = 1024 * 1024;
 const NODE_TITLE_HEIGHT = 30;
 const NODE_SIDE_PADDING = 20;
 const NODE_BOTTOM_PADDING = 12;
+const DOUBAO_MIN_NODE_WIDTH = 360;
+const DOUBAO_MEDIA_MIN_WIDTH = {
+  image: 360,
+  video: 400,
+  file: 360,
+};
 const VIDEO_MODE_LOCAL = "本地上传（≤512MB）";
 const VIDEO_MODE_TOS_BUCKET = "TOS 对象存储上传（≤2GB）";
 const VIDEO_MODE_TOS_URL = "已有 TOS 视频地址";
@@ -23,12 +29,10 @@ const UI_STRINGS = {
     pickImage: "Choose images",
     pickVideo: "Choose video",
     pickFile: "Choose file",
-    dropImages: "Drop images here (max 9, each ≤512MB)",
+    dropImages: "Drop images here (max 9, total ≤512MB)",
     dropVideoLocal: "Drop a video here (single file, max 512MB)",
     dropVideoTos: "Drop a video here (stored on Volcengine TOS, max 2GB)",
     dropFile: "Drop a document here (single file, max 512MB)",
-    imageLimitHint: "Up to 9 images. Each file must be 512MB or smaller.",
-    fileLimitHint: "Single document. File size must not exceed 512MB.",
     fileN: (index) => `File ${index + 1}`,
     uploadFailed: "Upload to server failed.",
     uploadFailedComfy: "Upload to ComfyUI server failed.",
@@ -38,7 +42,7 @@ const UI_STRINGS = {
     uploadComplete: "Upload complete.",
     uploadProgress: (percent) => `Upload progress: ${percent}%`,
     imageCountLimit: "Too many images. Maximum is 9.",
-    imageTooLarge: (name) => `Image ${name} exceeds 512MB.`,
+    imageTotalTooLarge: "Images exceed 512MB in total (Doubao API processing limit).",
     videoTooLarge: (name, limitLabel, hint) =>
       `Video ${name} exceeds the ${limitLabel} limit. ${hint}`,
     videoHintLocal:
@@ -56,12 +60,10 @@ const UI_STRINGS = {
     pickImage: "选择图片上传",
     pickVideo: "选择视频上传",
     pickFile: "选择文件上传",
-    dropImages: "拖拽图片到此处（最多 9 张，单张不超过 512MB）",
+    dropImages: "拖拽图片到此处（最多 9 张，合计不超过 512MB）",
     dropVideoLocal: "拖拽视频到此处（仅单个，最大 512MB）",
     dropVideoTos: "拖拽视频到此处（将存入火山引擎 TOS，最大 2GB）",
     dropFile: "拖拽文档到此处（仅单个，不超过 512MB）",
-    imageLimitHint: "最多 9 张图片，单张文件大小不能超过 512MB。",
-    fileLimitHint: "仅支持单个文档，文件大小不能超过 512MB。",
     fileN: (index) => `第 ${index + 1} 个文件`,
     uploadFailed: "上传到服务器失败。",
     uploadFailedComfy: "上传到 ComfyUI 服务器失败。",
@@ -71,7 +73,7 @@ const UI_STRINGS = {
     uploadComplete: "上传完成。",
     uploadProgress: (percent) => `上传进度：${percent}%`,
     imageCountLimit: "图片数量超限，最多允许 9 张。",
-    imageTooLarge: (name) => `图片 ${name} 超过 512MB。`,
+    imageTotalTooLarge: "图片合计超过 512MB（豆包 API 单次处理上限）。",
     videoTooLarge: (name, limitLabel, hint) =>
       `视频 ${name} 超过 ${limitLabel} 上限。${hint}`,
     videoHintLocal:
@@ -142,41 +144,60 @@ function notifyError(message) {
 }
 
 function injectStyles() {
-  if (document.getElementById("doubao-media-style")) return;
+  const styleId = "doubao-media-style-v2";
+  const previous = document.getElementById("doubao-media-style");
+  if (previous) previous.remove();
+  if (document.getElementById(styleId)) return;
   const style = document.createElement("style");
-  style.id = "doubao-media-style";
+  style.id = styleId;
   style.textContent = `
     .doubao-media-wrap {
       display: flex;
       flex-direction: column;
       gap: 8px;
       width: 100%;
+      max-width: 100%;
       height: 100%;
       min-width: 0;
       min-height: 0;
       box-sizing: border-box;
       overflow: hidden;
     }
-    .doubao-toolbar { display: flex; gap: 8px; flex-shrink: 0; }
+    .doubao-toolbar {
+      display: flex;
+      gap: 8px;
+      flex-shrink: 0;
+      width: 100%;
+      min-width: 0;
+    }
     .doubao-btn {
       flex: 1;
+      min-width: 0;
       padding: 4px 8px;
       border: 1px solid #556;
       background: #2e3440;
       color: #f5f5f5;
       border-radius: 4px;
       cursor: pointer;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .doubao-dropzone {
       width: 100%;
+      max-width: 100%;
       box-sizing: border-box;
       flex-shrink: 0;
       border: 1px dashed #5f6b7a;
       border-radius: 6px;
-      padding: 10px;
+      padding: 8px;
       text-align: center;
       font-size: 12px;
+      line-height: 1.45;
       color: #d8dee9;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
     .doubao-dropzone.active { border-color: #7aa2f7; background: rgba(122, 162, 247, 0.08); }
     .doubao-hint {
@@ -231,6 +252,10 @@ function injectStyles() {
       align-content: start;
     }
     .doubao-grid-1 { grid-template-columns: 1fr; }
+    .doubao-grid-images {
+      grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+      gap: 14px;
+    }
     .doubao-card {
       position: relative;
       border: 1px solid #4c566a;
@@ -248,19 +273,76 @@ function injectStyles() {
       object-fit: cover;
       display: block;
     }
+    .doubao-grid-images .doubao-card {
+      height: 200px;
+      min-height: 200px;
+      max-height: 200px;
+      display: flex;
+      flex-direction: column;
+    }
+    .doubao-thumb {
+      position: relative;
+      flex: 0 0 120px;
+      width: 100%;
+      height: 120px;
+      overflow: hidden;
+      background: #161b26;
+    }
+    .doubao-grid-images .doubao-thumb img {
+      width: 100%;
+      height: 100%;
+      aspect-ratio: auto;
+      object-fit: cover;
+      object-position: center;
+      display: block;
+    }
+    .doubao-card-body {
+      flex: 0 0 60px;
+      height: 60px;
+      min-width: 0;
+      padding: 8px 10px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 4px;
+      text-align: left;
+      box-sizing: border-box;
+    }
     .doubao-card-title { padding: 8px; font-size: 12px; color: #eceff4; word-break: break-all; }
+    .doubao-grid-images .doubao-card-title {
+      padding: 0;
+      line-height: 1.3;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      word-break: normal;
+    }
     .doubao-card-sub { padding: 0 8px 8px; font-size: 11px; color: #aeb6c2; }
+    .doubao-grid-images .doubao-card-sub {
+      padding: 0;
+      line-height: 1.25;
+    }
     .doubao-remove {
       position: absolute;
-      top: 4px;
-      right: 4px;
-      width: 18px;
-      height: 18px;
+      top: 6px;
+      right: 6px;
+      width: 20px;
+      height: 20px;
       border: none;
       border-radius: 50%;
-      background: rgba(0,0,0,.6);
-      color: #fff;
+      background: rgba(0, 0, 0, 0.4);
+      color: rgba(255, 255, 255, 0.88);
+      font-size: 14px;
+      line-height: 20px;
+      padding: 0;
       cursor: pointer;
+      opacity: 0.72;
+      transition: background 120ms ease, opacity 120ms ease, color 120ms ease;
+    }
+    .doubao-remove:hover {
+      background: rgba(0, 0, 0, 0.78);
+      color: #fff;
+      opacity: 1;
     }
     .doubao-modal {
       position: fixed;
@@ -295,6 +377,17 @@ function parseMultiline(raw) {
 
 function filenameFromPath(path) {
   return String(path || "").split(/[\\/]/).pop() || "unknown";
+}
+
+function fileExtensionLabel(name) {
+  const filename = filenameFromPath(name);
+  const dot = filename.lastIndexOf(".");
+  if (dot <= 0 || dot === filename.length - 1) return "FILE";
+  return filename.slice(dot + 1).toUpperCase();
+}
+
+function formatExtAndSize(name, sizeBytes) {
+  return `${fileExtensionLabel(name)} · ${formatBytes(sizeBytes || 0)}`;
 }
 
 function mediaTypeForKind(kind) {
@@ -389,7 +482,19 @@ const DOUBAO_NODE_NAMES = new Set([
   "DoubaoFileUpload",
   "DoubaoRun",
 ]);
-const DOUBAO_MIN_NODE_WIDTH = 280;
+
+function getNodeMinWidth(node) {
+  return Number(node?._doubaoMinWidth) || DOUBAO_MIN_NODE_WIDTH;
+}
+
+function ensureNodeMinWidth(node, minWidth = getNodeMinWidth(node)) {
+  if (!Array.isArray(node.size) || node.size.length < 2) return;
+  if (node.size[0] >= minWidth) return;
+  node.size[0] = minWidth;
+  if (typeof node.setSize === "function") {
+    node.setSize([minWidth, node.size[1]]);
+  }
+}
 
 function setTruncateWidgetValuesFirst(enabled) {
   const lg = globalThis.LiteGraph;
@@ -447,17 +552,23 @@ function wrapWidgetDrawForLabels(widget) {
 }
 
 function installLabelSafeWidgets(node) {
-  if (Array.isArray(node.size) && node.size[0] < DOUBAO_MIN_NODE_WIDTH) {
-    node.size[0] = DOUBAO_MIN_NODE_WIDTH;
-  }
+  ensureNodeMinWidth(node);
   if (!node._doubaoLabelSafe) {
     node._doubaoLabelSafe = true;
     const originalOnResize = node.onResize;
     node.onResize = function onResizeGuarded(size) {
-      if (size?.[0] < DOUBAO_MIN_NODE_WIDTH) size[0] = DOUBAO_MIN_NODE_WIDTH;
-      if (this.size?.[0] < DOUBAO_MIN_NODE_WIDTH) this.size[0] = DOUBAO_MIN_NODE_WIDTH;
+      const minWidth = getNodeMinWidth(this);
+      if (size?.[0] < minWidth) size[0] = minWidth;
+      if (this.size?.[0] < minWidth) this.size[0] = minWidth;
       if (originalOnResize) originalOnResize.apply(this, arguments);
       padOverlayInputs(this);
+    };
+    const originalOnConfigure = node.onConfigure;
+    node.onConfigure = function onConfigureGuarded() {
+      const result = originalOnConfigure ? originalOnConfigure.apply(this, arguments) : undefined;
+      ensureNodeMinWidth(this);
+      padOverlayInputs(this);
+      return result;
     };
   }
   for (const widget of node.widgets || []) {
@@ -466,10 +577,21 @@ function installLabelSafeWidgets(node) {
   padOverlayInputs(node);
 }
 
+function applyHostWidth(element, innerWidth) {
+  if (!element?.style) return;
+  element.style.boxSizing = "border-box";
+  element.style.width = `${innerWidth}px`;
+  element.style.maxWidth = `${innerWidth}px`;
+  element.style.minWidth = "0";
+  element.style.overflow = "hidden";
+}
+
 function installMediaWidget(node, options) {
   injectStyles();
   const pathWidget = findWidget(node, options.pathField);
   if (!pathWidget) return null;
+  node._doubaoMinWidth = options.minNodeWidth || DOUBAO_MEDIA_MIN_WIDTH[options.kind] || DOUBAO_MIN_NODE_WIDTH;
+  ensureNodeMinWidth(node);
 
   const state = {
     pathItems: [],
@@ -553,8 +675,9 @@ function installMediaWidget(node, options) {
   }
 
   function computeMediaSize(width) {
-    const nodeWidth = node.size?.[0] ?? width ?? 280;
-    const widgetWidth = Math.max(160, (width ?? nodeWidth) - 0);
+    const minWidth = getNodeMinWidth(node);
+    const nodeWidth = node.size?.[0] ?? width ?? minWidth;
+    const widgetWidth = Math.max(160, Math.min(nodeWidth, width ?? nodeWidth) - NODE_SIDE_PADDING);
     const otherHeight = measureOtherWidgetsHeight();
     const nodeHeight = node.size?.[1] ?? NODE_TITLE_HEIGHT + otherHeight + options.minWidgetHeight;
     const available = nodeHeight - NODE_TITLE_HEIGHT - otherHeight - NODE_BOTTOM_PADDING;
@@ -562,16 +685,16 @@ function installMediaWidget(node, options) {
   }
 
   function applyMediaLayout() {
-    const nodeWidth = node.size?.[0] ?? 280;
+    const minWidth = getNodeMinWidth(node);
+    ensureNodeMinWidth(node, minWidth);
+    const nodeWidth = node.size?.[0] ?? minWidth;
     const innerWidth = Math.max(0, nodeWidth - NODE_SIDE_PADDING);
     const [, height] = computeMediaSize(nodeWidth);
-    container.style.width = `${innerWidth}px`;
+    applyHostWidth(container, innerWidth);
     container.style.height = `${height}px`;
     if (domWidget.element && domWidget.element !== container) {
-      domWidget.element.style.width = `${innerWidth}px`;
+      applyHostWidth(domWidget.element, innerWidth);
       domWidget.element.style.height = `${height}px`;
-      domWidget.element.style.overflow = "hidden";
-      domWidget.element.style.boxSizing = "border-box";
     }
   }
 
@@ -597,7 +720,13 @@ function installMediaWidget(node, options) {
     node.setDirtyCanvas(true, true);
   }
 
+  let progressHideTimer = null;
+
   function setUploadProgress(percent, statusText = "") {
+    if (progressHideTimer) {
+      clearTimeout(progressHideTimer);
+      progressHideTimer = null;
+    }
     const safePercent = Math.max(0, Math.min(100, Math.round(percent)));
     progressBarInner.style.width = `${safePercent}%`;
     progressText.textContent = statusText || ui().uploadProgress(safePercent);
@@ -605,9 +734,24 @@ function installMediaWidget(node, options) {
   }
 
   function hideUploadProgress() {
+    if (progressHideTimer) {
+      clearTimeout(progressHideTimer);
+      progressHideTimer = null;
+    }
     progressWrap.style.display = "none";
     progressBarInner.style.width = "0%";
     progressText.textContent = "";
+  }
+
+  function scheduleHideUploadProgress(delayMs = 2000) {
+    if (progressHideTimer) {
+      clearTimeout(progressHideTimer);
+    }
+    progressHideTimer = setTimeout(() => {
+      progressHideTimer = null;
+      hideUploadProgress();
+      refreshNodeLayout(node);
+    }, delayMs);
   }
 
   function renderCards() {
@@ -620,28 +764,11 @@ function installMediaWidget(node, options) {
     items.forEach((item, index) => {
       const card = document.createElement("div");
       card.className = "doubao-card";
-
-      if (options.kind === "image" && item.previewUrl) {
-        const img = document.createElement("img");
-        img.src = item.previewUrl;
-        card.appendChild(img);
-      } else if (options.kind === "video" && item.previewUrl) {
-        const video = document.createElement("video");
-        video.src = item.previewUrl;
-        video.muted = true;
-        video.playsInline = true;
-        video.preload = "metadata";
-        card.appendChild(video);
+      const displayName = item.name || ui().fileN(index);
+      const isImageCard = options.kind === "image";
+      if (isImageCard) {
+        card.title = displayName;
       }
-
-      const title = document.createElement("div");
-      title.className = "doubao-card-title";
-      title.textContent = item.name || ui().fileN(index);
-      card.appendChild(title);
-      const sub = document.createElement("div");
-      sub.className = "doubao-card-sub";
-      sub.textContent = `${item.mime || "unknown"} | ${formatBytes(item.size || 0)}`;
-      card.appendChild(sub);
 
       const removeBtn = document.createElement("button");
       removeBtn.className = "doubao-remove";
@@ -654,7 +781,50 @@ function installMediaWidget(node, options) {
         syncWidgets();
         renderCards();
       });
-      card.appendChild(removeBtn);
+
+      if (isImageCard) {
+        const thumb = document.createElement("div");
+        thumb.className = "doubao-thumb";
+        if (item.previewUrl) {
+          const img = document.createElement("img");
+          img.src = item.previewUrl;
+          img.alt = displayName;
+          thumb.appendChild(img);
+        }
+        thumb.appendChild(removeBtn);
+        card.appendChild(thumb);
+
+        const body = document.createElement("div");
+        body.className = "doubao-card-body";
+        const title = document.createElement("div");
+        title.className = "doubao-card-title";
+        title.textContent = displayName;
+        const sub = document.createElement("div");
+        sub.className = "doubao-card-sub";
+        sub.textContent = formatExtAndSize(displayName, item.size || 0);
+        body.appendChild(title);
+        body.appendChild(sub);
+        card.appendChild(body);
+      } else {
+        if (options.kind === "video" && item.previewUrl) {
+          const video = document.createElement("video");
+          video.src = item.previewUrl;
+          video.muted = true;
+          video.playsInline = true;
+          video.preload = "metadata";
+          card.appendChild(video);
+        }
+
+        const title = document.createElement("div");
+        title.className = "doubao-card-title";
+        title.textContent = displayName;
+        card.appendChild(title);
+        const sub = document.createElement("div");
+        sub.className = "doubao-card-sub";
+        sub.textContent = `${item.mime || "unknown"} | ${formatBytes(item.size || 0)}`;
+        card.appendChild(sub);
+        card.appendChild(removeBtn);
+      }
 
       if (options.kind === "image") {
         card.draggable = true;
@@ -711,9 +881,6 @@ function installMediaWidget(node, options) {
       if (currentItems.length + 1 > 9) {
         throw new Error(ui().imageCountLimit);
       }
-      if (size > 512 * MB) {
-        throw new Error(ui().imageTooLarge(file.name));
-      }
     } else if (options.kind === "video") {
       const maxBytes = typeof options.getMaxBytes === "function" ? options.getMaxBytes() : 512 * MB;
       if (size > maxBytes) {
@@ -736,6 +903,19 @@ function installMediaWidget(node, options) {
     if (!options.multiple && incoming.length > 1) {
       notifyError(ui().singleFileOnly);
       return;
+    }
+
+    if (options.kind === "image") {
+      if (current.length + incoming.length > 9) {
+        notifyError(ui().imageCountLimit);
+        return;
+      }
+      const existingBytes = current.reduce((sum, item) => sum + (item.size || 0), 0);
+      const incomingBytes = incoming.reduce((sum, file) => sum + (file.size || 0), 0);
+      if (existingBytes + incomingBytes > 512 * MB) {
+        notifyError(ui().imageTotalTooLarge);
+        return;
+      }
     }
 
     for (const file of incoming) {
@@ -771,6 +951,9 @@ function installMediaWidget(node, options) {
       } catch (error) {
         setUploadProgress(0, error.message || ui().pathUploadFailed);
         notifyError(error.message || ui().pathUploadFailed);
+        syncWidgets();
+        renderCards();
+        scheduleHideUploadProgress();
         return;
       }
       item.path = uploadResult.path;
@@ -784,6 +967,7 @@ function installMediaWidget(node, options) {
     setUploadProgress(100, ui().uploadComplete);
     syncWidgets();
     renderCards();
+    scheduleHideUploadProgress();
   }
 
   function clearCurrent() {
@@ -831,6 +1015,7 @@ function installMediaWidget(node, options) {
   toggleWidgetVisibility(pathWidget, false);
   hydrateFromWidgets();
   applyMediaLayout();
+  requestAnimationFrame(() => applyMediaLayout());
 
   return {
     applyMediaLayout,
@@ -998,9 +1183,9 @@ app.registerExtension({
           pathField: "图片路径列表",
           pickButtonText: ui().pickImage,
           dropText: ui().dropImages,
-          hintText: ui().imageLimitHint,
-          gridClass: "doubao-grid",
-          minWidgetHeight: 180,
+          gridClass: "doubao-grid doubao-grid-images",
+          minWidgetHeight: 280,
+          minNodeWidth: DOUBAO_MEDIA_MIN_WIDTH.image,
         });
       }
       if (nodeData.name === "DoubaoVideoUpload") {
@@ -1014,6 +1199,7 @@ app.registerExtension({
           dropText: ui().dropVideoLocal,
           gridClass: "doubao-grid doubao-grid-1",
           minWidgetHeight: 160,
+          minNodeWidth: DOUBAO_MEDIA_MIN_WIDTH.video,
           getMaxBytes: () => this._doubaoVideoMaxBytes || 512 * MB,
         });
         installVideoInputMode(this, mediaCtl);
@@ -1027,9 +1213,9 @@ app.registerExtension({
           pathField: "文件路径",
           pickButtonText: ui().pickFile,
           dropText: ui().dropFile,
-          hintText: ui().fileLimitHint,
           gridClass: "doubao-grid doubao-grid-1",
           minWidgetHeight: 160,
+          minNodeWidth: DOUBAO_MEDIA_MIN_WIDTH.file,
         });
       }
 
