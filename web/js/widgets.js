@@ -1,9 +1,6 @@
 import { app } from "/scripts/app.js";
+import { api } from "/scripts/api.js";
 
-const IMAGE_MODE_PATH = "本地文件路径（推荐）";
-const VIDEO_MODE_PATH = "本地文件路径（推荐）";
-const FILE_MODE_PATH = "本地文件路径（推荐）";
-const BASE64_MODE = "Base64 编码上传";
 const MODEL_PRESET_TO_ID = {
   "doubao-seed-evolving": "doubao-seed-evolving",
   "doubao-seed-2-1-pro": "doubao-seed-2-1-pro-260628",
@@ -13,6 +10,86 @@ const MODEL_PRESET_TO_ID = {
   "自定义": "",
 };
 const MB = 1024 * 1024;
+const NODE_TITLE_HEIGHT = 30;
+const NODE_SIDE_PADDING = 20;
+const NODE_BOTTOM_PADDING = 12;
+const VIDEO_MODE_LOCAL = "本地上传（≤512MB）";
+const VIDEO_MODE_TOS_BUCKET = "TOS 对象存储上传（≤2GB）";
+const VIDEO_MODE_TOS_URL = "已有 TOS 视频地址";
+
+const UI_STRINGS = {
+  en: {
+    clear: "Clear",
+    pickImage: "Choose images",
+    pickVideo: "Choose video",
+    pickFile: "Choose file",
+    dropImages: "Drop images here (multiple allowed)",
+    dropVideoLocal: "Drop a video here (single file, max 512MB)",
+    dropVideoTos: "Drop a video here (stored on Volcengine TOS, max 2GB)",
+    dropFile: "Drop a document here (single file)",
+    fileN: (index) => `File ${index + 1}`,
+    uploadFailed: "Upload to server failed.",
+    invalidServerPath: "Server did not return a valid path.",
+    imageCountLimit: "Too many images. Maximum is 9.",
+    imageTooLarge: (name) => `Image ${name} exceeds 512MB.`,
+    videoTooLarge: (name, limitLabel, hint) =>
+      `Video ${name} exceeds the ${limitLabel} limit. ${hint}`,
+    videoHintLocal:
+      "For files over 512MB, switch Input Mode to TOS object storage upload (≤2GB) and fill in the Volcengine TOS Bucket.",
+    videoHintTos: "TOS object storage supports videos up to 2GB.",
+    fileTooLarge: (name) => `File ${name} exceeds 512MB.`,
+    singleFileOnly: "This node accepts a single file.",
+    pathUploadFailed: "Path-mode upload failed.",
+    fileName: "Name",
+    fileType: "Type",
+    fileSize: "Size",
+  },
+  zh: {
+    clear: "清空",
+    pickImage: "选择图片上传",
+    pickVideo: "选择视频上传",
+    pickFile: "选择文件上传",
+    dropImages: "拖拽图片到此处（支持多张）",
+    dropVideoLocal: "拖拽视频到此处（仅单个，最大 512MB）",
+    dropVideoTos: "拖拽视频到此处（将存入火山引擎 TOS，最大 2GB）",
+    dropFile: "拖拽文档到此处（仅单个）",
+    fileN: (index) => `第 ${index + 1} 个文件`,
+    uploadFailed: "上传到服务器失败。",
+    invalidServerPath: "服务器未返回有效路径。",
+    imageCountLimit: "图片数量超限，最多允许 9 张。",
+    imageTooLarge: (name) => `图片 ${name} 超过 512MB。`,
+    videoTooLarge: (name, limitLabel, hint) =>
+      `视频 ${name} 超过 ${limitLabel} 上限。${hint}`,
+    videoHintLocal:
+      "超过 512MB 时请将输入方式改为「TOS 对象存储上传（≤2GB）」，并填写火山引擎 TOS Bucket。",
+    videoHintTos: "TOS 对象存储最大支持 2GB 视频。",
+    fileTooLarge: (name) => `文件 ${name} 超过 512MB。`,
+    singleFileOnly: "该节点仅支持单个文件。",
+    pathUploadFailed: "路径模式上传失败。",
+    fileName: "文件名",
+    fileType: "类型",
+    fileSize: "大小",
+  },
+};
+
+function getLocale() {
+  try {
+    const value =
+      app.extensionManager?.setting?.get?.("Comfy.Locale") ||
+      app.ui?.settings?.getSettingValue?.("Comfy.Locale") ||
+      "";
+    const locale = String(value || "en").toLowerCase();
+    if (locale.startsWith("zh")) return "zh";
+    return "en";
+  } catch (error) {
+    console.error(error);
+    return "en";
+  }
+}
+
+function ui() {
+  return UI_STRINGS[getLocale()] || UI_STRINGS.en;
+}
 
 function findWidget(node, name) {
   return node.widgets?.find((widget) => widget.name === name);
@@ -27,29 +104,6 @@ function toggleWidgetVisibility(widget, visible) {
   widget.computeSize = visible
     ? widget._doubaoOriginalComputeSize
     : () => [0, -4];
-}
-
-function installModeToggle(node, modeWidgetName, rules, onModeChange) {
-  const modeWidget = findWidget(node, modeWidgetName);
-  if (!modeWidget) return;
-  const applyMode = (modeValue) => {
-    for (const [widgetName, shouldShow] of rules(modeValue)) {
-      const targetWidget = findWidget(node, widgetName);
-      toggleWidgetVisibility(targetWidget, shouldShow);
-    }
-    if (onModeChange) {
-      onModeChange(modeValue);
-    }
-    node.setDirtyCanvas(true, true);
-  };
-  const originalCallback = modeWidget.callback;
-  modeWidget.callback = (value, ...args) => {
-    applyMode(value);
-    if (originalCallback) {
-      originalCallback.call(modeWidget, value, ...args);
-    }
-  };
-  applyMode(modeWidget.value);
 }
 
 function formatBytes(sizeBytes) {
@@ -78,21 +132,100 @@ function injectStyles() {
   const style = document.createElement("style");
   style.id = "doubao-media-style";
   style.textContent = `
-    .doubao-media-wrap { display: flex; flex-direction: column; gap: 8px; }
-    .doubao-toolbar { display: flex; gap: 8px; }
-    .doubao-btn { padding: 4px 8px; border: 1px solid #556; background: #2e3440; color: #f5f5f5; border-radius: 4px; cursor: pointer; }
-    .doubao-dropzone { border: 1px dashed #5f6b7a; border-radius: 6px; padding: 10px; text-align: center; font-size: 12px; color: #d8dee9; }
+    .doubao-media-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      width: 100%;
+      height: 100%;
+      min-width: 0;
+      min-height: 0;
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+    .doubao-toolbar { display: flex; gap: 8px; flex-shrink: 0; }
+    .doubao-btn {
+      flex: 1;
+      padding: 4px 8px;
+      border: 1px solid #556;
+      background: #2e3440;
+      color: #f5f5f5;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .doubao-dropzone {
+      width: 100%;
+      box-sizing: border-box;
+      flex-shrink: 0;
+      border: 1px dashed #5f6b7a;
+      border-radius: 6px;
+      padding: 10px;
+      text-align: center;
+      font-size: 12px;
+      color: #d8dee9;
+    }
     .doubao-dropzone.active { border-color: #7aa2f7; background: rgba(122, 162, 247, 0.08); }
-    .doubao-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-    .doubao-grid-1 { display: grid; grid-template-columns: 1fr; gap: 8px; }
-    .doubao-card { position: relative; border: 1px solid #4c566a; border-radius: 6px; overflow: hidden; background: #1f2430; min-height: 80px; cursor: pointer; }
-    .doubao-card img,.doubao-card video { width: 100%; height: 90px; object-fit: cover; display: block; }
+    .doubao-grid {
+      flex: 1;
+      min-height: 0;
+      min-width: 0;
+      overflow: auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+      gap: 8px;
+      align-content: start;
+    }
+    .doubao-grid-1 { grid-template-columns: 1fr; }
+    .doubao-card {
+      position: relative;
+      border: 1px solid #4c566a;
+      border-radius: 6px;
+      overflow: hidden;
+      background: #1f2430;
+      min-height: 80px;
+      min-width: 0;
+      cursor: pointer;
+    }
+    .doubao-card img,.doubao-card video {
+      width: 100%;
+      height: auto;
+      aspect-ratio: 16 / 10;
+      object-fit: cover;
+      display: block;
+    }
     .doubao-card-title { padding: 8px; font-size: 12px; color: #eceff4; word-break: break-all; }
     .doubao-card-sub { padding: 0 8px 8px; font-size: 11px; color: #aeb6c2; }
-    .doubao-remove { position: absolute; top: 4px; right: 4px; width: 18px; height: 18px; border: none; border-radius: 50%; background: rgba(0,0,0,.6); color: #fff; cursor: pointer; }
-    .doubao-empty { font-size: 12px; color: #8b93a2; padding: 4px; }
-    .doubao-modal { position: fixed; inset: 0; background: rgba(0,0,0,.75); display: flex; align-items: center; justify-content: center; z-index: 10000; }
-    .doubao-modal-content { max-width: 92vw; max-height: 92vh; background: #111722; border: 1px solid #444f61; border-radius: 8px; padding: 10px; color: #e5e9f0; overflow: auto; }
+    .doubao-remove {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      width: 18px;
+      height: 18px;
+      border: none;
+      border-radius: 50%;
+      background: rgba(0,0,0,.6);
+      color: #fff;
+      cursor: pointer;
+    }
+    .doubao-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.75);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+    }
+    .doubao-modal-content {
+      max-width: 92vw;
+      max-height: 92vh;
+      background: #111722;
+      border: 1px solid #444f61;
+      border-radius: 8px;
+      padding: 10px;
+      color: #e5e9f0;
+      overflow: auto;
+    }
     .doubao-modal-content img,.doubao-modal-content video { max-width: 88vw; max-height: 80vh; display: block; }
   `;
   document.head.appendChild(style);
@@ -105,21 +238,40 @@ function parseMultiline(raw) {
     .filter(Boolean);
 }
 
-function fileToDataURL(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ""));
-    reader.onerror = () => reject(new Error("文件读取失败"));
-    reader.readAsDataURL(file);
-  });
-}
-
 function filenameFromPath(path) {
   return String(path || "").split(/[\\/]/).pop() || "unknown";
 }
 
-function getLocalPath(file) {
-  return String(file?.path || "");
+function mediaTypeForKind(kind) {
+  if (kind === "image") return "image";
+  if (kind === "video") return "video";
+  return "file";
+}
+
+async function uploadPathModeFile(file, kind) {
+  const formData = new FormData();
+  formData.append("file", file, file.name);
+  formData.append("media_type", mediaTypeForKind(kind));
+
+  const response = await api.fetchApi("/doubao/upload", {
+    method: "POST",
+    body: formData,
+  });
+  if (!response.ok) {
+    let message = ui().uploadFailed;
+    try {
+      const payload = await response.json();
+      message = payload?.error || message;
+    } catch (error) {
+      console.error(error);
+    }
+    throw new Error(message);
+  }
+  const payload = await response.json();
+  if (!payload?.ok || !payload?.path) {
+    throw new Error(payload?.error || ui().invalidServerPath);
+  }
+  return payload;
 }
 
 function showModal(contentNode) {
@@ -137,18 +289,23 @@ function showModal(contentNode) {
   document.body.appendChild(modal);
 }
 
+function refreshNodeLayout(node) {
+  if (typeof node.computeSize === "function") {
+    const nextSize = node.computeSize(node.size);
+    if (Array.isArray(nextSize) && nextSize.length >= 2) {
+      node.setSize([node.size?.[0] ?? nextSize[0], nextSize[1]]);
+    }
+  }
+  node.setDirtyCanvas(true, true);
+}
+
 function installMediaWidget(node, options) {
   injectStyles();
-  const modeWidget = findWidget(node, "传入方式");
   const pathWidget = findWidget(node, options.pathField);
-  const base64Widget = findWidget(node, options.base64Field);
-  const base64NameWidget = options.base64NameField ? findWidget(node, options.base64NameField) : null;
-  if (!modeWidget || !pathWidget || !base64Widget) return;
+  if (!pathWidget) return null;
 
   const state = {
-    mode: modeWidget.value || options.pathModeValue,
     pathItems: [],
-    base64Items: [],
   };
   node._doubaoMediaState = state;
 
@@ -163,7 +320,7 @@ function installMediaWidget(node, options) {
   const clearBtn = document.createElement("button");
   clearBtn.className = "doubao-btn";
   clearBtn.type = "button";
-  clearBtn.textContent = "清空";
+  clearBtn.textContent = ui().clear;
   toolbar.appendChild(pickBtn);
   toolbar.appendChild(clearBtn);
 
@@ -189,11 +346,51 @@ function installMediaWidget(node, options) {
     serialize: false,
     hideOnZoom: false,
   });
-  domWidget.computeSize = () => [320, options.widgetHeight];
 
-  function activeItems() {
-    return state.mode === options.base64ModeValue ? state.base64Items : state.pathItems;
+  function measureOtherWidgetsHeight() {
+    let height = 0;
+    for (const widget of node.widgets || []) {
+      if (widget === domWidget) continue;
+      const size = widget.computeSize ? widget.computeSize(node.size?.[0] || 280) : [0, 24];
+      const widgetHeight = Array.isArray(size) ? size[1] : 24;
+      if (widget.hidden || widgetHeight <= 0) continue;
+      height += widgetHeight + 4;
+    }
+    return height;
   }
+
+  function computeMediaSize(width) {
+    const nodeWidth = node.size?.[0] ?? width ?? 280;
+    const widgetWidth = Math.max(160, (width ?? nodeWidth) - 0);
+    const otherHeight = measureOtherWidgetsHeight();
+    const nodeHeight = node.size?.[1] ?? NODE_TITLE_HEIGHT + otherHeight + options.minWidgetHeight;
+    const available = nodeHeight - NODE_TITLE_HEIGHT - otherHeight - NODE_BOTTOM_PADDING;
+    return [widgetWidth, Math.max(options.minWidgetHeight, available)];
+  }
+
+  function applyMediaLayout() {
+    const nodeWidth = node.size?.[0] ?? 280;
+    const innerWidth = Math.max(0, nodeWidth - NODE_SIDE_PADDING);
+    const [, height] = computeMediaSize(nodeWidth);
+    container.style.width = `${innerWidth}px`;
+    container.style.height = `${height}px`;
+    if (domWidget.element && domWidget.element !== container) {
+      domWidget.element.style.width = `${innerWidth}px`;
+      domWidget.element.style.height = `${height}px`;
+      domWidget.element.style.overflow = "hidden";
+      domWidget.element.style.boxSizing = "border-box";
+    }
+  }
+
+  domWidget.computeSize = (width) => computeMediaSize(width);
+
+  const originalOnResize = node.onResize;
+  node.onResize = function onResize(size) {
+    if (originalOnResize) {
+      originalOnResize.apply(this, arguments);
+    }
+    applyMediaLayout(size);
+  };
 
   function revokeItemUrl(item) {
     if (item.objectUrl) {
@@ -202,32 +399,15 @@ function installMediaWidget(node, options) {
   }
 
   function syncWidgets() {
-    if (state.mode === options.base64ModeValue) {
-      const lines = state.base64Items.map((item) => item.dataUri || "");
-      base64Widget.value = options.multiple ? lines.join("\n") : lines[0] || "";
-      pathWidget.value = options.multiple ? "" : "";
-      if (base64NameWidget) {
-        base64NameWidget.value = state.base64Items[0]?.name || "document.pdf";
-      }
-    } else {
-      const lines = state.pathItems.map((item) => item.path || "");
-      pathWidget.value = options.multiple ? lines.join("\n") : lines[0] || "";
-      base64Widget.value = options.multiple ? "" : "";
-      if (base64NameWidget) {
-        base64NameWidget.value = "document.pdf";
-      }
-    }
+    const lines = state.pathItems.map((item) => item.path || "");
+    pathWidget.value = options.multiple ? lines.join("\n") : lines[0] || "";
     node.setDirtyCanvas(true, true);
   }
 
   function renderCards() {
     previewGrid.innerHTML = "";
-    const items = activeItems();
+    const items = state.pathItems;
     if (!items.length) {
-      const empty = document.createElement("div");
-      empty.className = "doubao-empty";
-      empty.textContent = "暂无内容，请选择文件或拖拽到此区域。";
-      previewGrid.appendChild(empty);
       return;
     }
 
@@ -235,9 +415,9 @@ function installMediaWidget(node, options) {
       const card = document.createElement("div");
       card.className = "doubao-card";
 
-      if (options.kind === "image" && (item.previewUrl || item.dataUri)) {
+      if (options.kind === "image" && item.previewUrl) {
         const img = document.createElement("img");
-        img.src = item.previewUrl || item.dataUri;
+        img.src = item.previewUrl;
         card.appendChild(img);
       } else if (options.kind === "video" && item.previewUrl) {
         const video = document.createElement("video");
@@ -250,7 +430,7 @@ function installMediaWidget(node, options) {
 
       const title = document.createElement("div");
       title.className = "doubao-card-title";
-      title.textContent = item.name || `第 ${index + 1} 个文件`;
+      title.textContent = item.name || ui().fileN(index);
       card.appendChild(title);
       const sub = document.createElement("div");
       sub.className = "doubao-card-sub";
@@ -291,9 +471,9 @@ function installMediaWidget(node, options) {
       }
 
       card.addEventListener("click", () => {
-        if (options.kind === "image" && (item.previewUrl || item.dataUri)) {
+        if (options.kind === "image" && item.previewUrl) {
           const img = document.createElement("img");
-          img.src = item.previewUrl || item.dataUri;
+          img.src = item.previewUrl;
           showModal(img);
           return;
         }
@@ -306,10 +486,11 @@ function installMediaWidget(node, options) {
           return;
         }
         const info = document.createElement("div");
+        const labels = ui();
         info.innerHTML = `
-          <div>文件名：${item.name || "-"}</div>
-          <div>类型：${item.mime || "-"}</div>
-          <div>大小：${formatBytes(item.size || 0)}</div>
+          <div>${labels.fileName}: ${item.name || "-"}</div>
+          <div>${labels.fileType}: ${item.mime || "-"}</div>
+          <div>${labels.fileSize}: ${formatBytes(item.size || 0)}</div>
         `;
         showModal(info);
       });
@@ -318,55 +499,42 @@ function installMediaWidget(node, options) {
     });
   }
 
-  function validateFile(file, isBase64Mode, currentItems) {
+  function validateFile(file, currentItems) {
     const size = file.size || 0;
     if (options.kind === "image") {
       if (currentItems.length + 1 > 9) {
-        throw new Error("图片数量超限，最多允许 9 张。");
+        throw new Error(ui().imageCountLimit);
       }
-      if (isBase64Mode && size > 10 * MB) {
-        throw new Error(`图片 ${file.name} 超过 10MB（Base64 模式）。`);
-      }
-      if (!isBase64Mode && size > 512 * MB) {
-        throw new Error(`图片 ${file.name} 超过 512MB（路径模式）。`);
+      if (size > 512 * MB) {
+        throw new Error(ui().imageTooLarge(file.name));
       }
     } else if (options.kind === "video") {
-      if (isBase64Mode && size > 50 * MB) {
-        throw new Error(`视频 ${file.name} 超过 50MB（Base64 模式）。`);
-      }
-      if (!isBase64Mode && size > 2 * 1024 * MB) {
-        throw new Error(`视频 ${file.name} 超过 2GB 上限。`);
+      const maxBytes = typeof options.getMaxBytes === "function" ? options.getMaxBytes() : 512 * MB;
+      if (size > maxBytes) {
+        const strings = ui();
+        const limitLabel = maxBytes > 512 * MB ? "2GB" : "512MB";
+        const hint = maxBytes <= 512 * MB ? strings.videoHintLocal : strings.videoHintTos;
+        throw new Error(strings.videoTooLarge(file.name, limitLabel, hint));
       }
     } else if (options.kind === "file") {
-      if (isBase64Mode && size > 50 * MB) {
-        throw new Error(`文件 ${file.name} 超过 50MB（Base64 模式）。`);
+      if (size > 512 * MB) {
+        throw new Error(ui().fileTooLarge(file.name));
       }
-      if (!isBase64Mode && size > 512 * MB) {
-        throw new Error(`文件 ${file.name} 超过 512MB（路径模式）。`);
-      }
-    }
-  }
-
-  function validateTotalBase64(items) {
-    const total = items.reduce((sum, item) => sum + (item.size || 0), 0);
-    if (total > 64 * MB) {
-      throw new Error(`Base64 请求体总量超限：${formatBytes(total)}，最大 64MB。`);
     }
   }
 
   async function processFiles(files) {
-    const isBase64Mode = state.mode === options.base64ModeValue;
-    const current = activeItems();
+    const current = state.pathItems;
     const incoming = Array.from(files || []);
     if (!incoming.length) return;
     if (!options.multiple && incoming.length > 1) {
-      notifyError("该节点仅支持单个文件。");
+      notifyError(ui().singleFileOnly);
       return;
     }
 
     for (const file of incoming) {
       try {
-        validateFile(file, isBase64Mode, current);
+        validateFile(file, current);
       } catch (error) {
         notifyError(error.message);
         return;
@@ -374,6 +542,7 @@ function installMediaWidget(node, options) {
     }
 
     if (!options.multiple) {
+      current.forEach(revokeItemUrl);
       current.splice(0, current.length);
     }
 
@@ -383,54 +552,37 @@ function installMediaWidget(node, options) {
         size: file.size || 0,
         mime: file.type || options.fallbackMime,
       };
-      if (isBase64Mode) {
-        item.dataUri = await fileToDataURL(file);
-        item.previewUrl = item.dataUri;
-      } else {
-        const localPath = getLocalPath(file);
-        if (!localPath) {
-          notifyError("当前环境无法读取本地绝对路径，请改用 Base64 模式或手动填写路径。");
-          return;
-        }
-        item.path = localPath;
-        item.previewUrl = URL.createObjectURL(file);
-        item.objectUrl = item.previewUrl;
+      let uploadResult;
+      try {
+        uploadResult = await uploadPathModeFile(file, options.kind);
+      } catch (error) {
+        notifyError(error.message || ui().pathUploadFailed);
+        return;
       }
+      item.path = uploadResult.path;
+      item.name = uploadResult.filename || file.name;
+      item.size = uploadResult.size || file.size || 0;
+      item.previewUrl = URL.createObjectURL(file);
+      item.objectUrl = item.previewUrl;
       current.push(item);
     }
 
-    if (isBase64Mode) {
-      try {
-        validateTotalBase64(current);
-      } catch (error) {
-        notifyError(error.message);
-        return;
-      }
-    }
     syncWidgets();
     renderCards();
   }
 
   function clearCurrent() {
-    activeItems().forEach(revokeItemUrl);
-    activeItems().splice(0, activeItems().length);
+    state.pathItems.forEach(revokeItemUrl);
+    state.pathItems.splice(0, state.pathItems.length);
     syncWidgets();
     renderCards();
   }
 
   function hydrateFromWidgets() {
     state.pathItems.forEach(revokeItemUrl);
-    state.base64Items.forEach(revokeItemUrl);
     state.pathItems = parseMultiline(pathWidget.value).map((line) => ({
       path: line,
       name: filenameFromPath(line),
-      size: 0,
-      mime: options.fallbackMime,
-    }));
-    state.base64Items = parseMultiline(base64Widget.value).map((line, index) => ({
-      dataUri: line,
-      previewUrl: line.startsWith("data:") ? line : "",
-      name: base64NameWidget?.value || `${options.kind}_${index + 1}`,
       size: 0,
       mime: options.fallbackMime,
     }));
@@ -459,22 +611,113 @@ function installMediaWidget(node, options) {
     await processFiles(event.dataTransfer?.files || []);
   });
 
-  installModeToggle(
-    node,
-    "传入方式",
-    (modeValue) => options.modeRules(modeValue),
-    (modeValue) => {
-      state.mode = modeValue;
-      renderCards();
-    }
-  );
-
   toggleWidgetVisibility(pathWidget, false);
-  toggleWidgetVisibility(base64Widget, false);
-  if (base64NameWidget) {
-    toggleWidgetVisibility(base64NameWidget, false);
-  }
   hydrateFromWidgets();
+  applyMediaLayout();
+
+  return {
+    applyMediaLayout,
+    setDropText(text) {
+      dropZone.textContent = text;
+    },
+    setUploaderVisible(visible) {
+      toggleWidgetVisibility(domWidget, visible);
+      container.style.display = visible ? "flex" : "none";
+      if (visible) {
+        applyMediaLayout();
+      }
+    },
+  };
+}
+
+function isKnownVideoMode(value) {
+  return value === VIDEO_MODE_LOCAL || value === VIDEO_MODE_TOS_BUCKET || value === VIDEO_MODE_TOS_URL;
+}
+
+function inferVideoMode(node) {
+  const modeWidget = findWidget(node, "输入方式");
+  const url = String(findWidget(node, "TOS视频URL")?.value || "").trim();
+  const bucket = String(findWidget(node, "TOS_Bucket")?.value || "").trim();
+  const current = String(modeWidget?.value || "");
+
+  if (isKnownVideoMode(current)) {
+    if (current === VIDEO_MODE_LOCAL) {
+      if (url.toLowerCase().startsWith("tos://")) {
+        return VIDEO_MODE_TOS_URL;
+      }
+      if (bucket) {
+        return VIDEO_MODE_TOS_BUCKET;
+      }
+    }
+    return current;
+  }
+
+  if (url.toLowerCase().startsWith("tos://")) {
+    return VIDEO_MODE_TOS_URL;
+  }
+  if (bucket) {
+    return VIDEO_MODE_TOS_BUCKET;
+  }
+  return VIDEO_MODE_LOCAL;
+}
+
+function installVideoInputMode(node, mediaCtl) {
+  const modeWidget = findWidget(node, "输入方式");
+  const urlWidget = findWidget(node, "TOS视频URL");
+  const bucketWidget = findWidget(node, "TOS_Bucket");
+  const prefixWidget = findWidget(node, "TOS_Prefix");
+  if (!modeWidget || !mediaCtl) return;
+
+  node._doubaoVideoMaxBytes = 512 * MB;
+
+  function applyVideoMode(options = {}) {
+    const inferLegacy = Boolean(options.inferLegacy);
+    let mode = String(modeWidget.value || VIDEO_MODE_LOCAL);
+    if (inferLegacy) {
+      mode = inferVideoMode(node);
+      if (modeWidget.value !== mode) {
+        modeWidget.value = mode;
+      }
+    }
+    if (!isKnownVideoMode(mode)) {
+      mode = VIDEO_MODE_LOCAL;
+      modeWidget.value = mode;
+    }
+
+    const showUploader = mode !== VIDEO_MODE_TOS_URL;
+    const showUrl = mode === VIDEO_MODE_TOS_URL;
+    const showBucket = mode === VIDEO_MODE_TOS_BUCKET;
+    node._doubaoVideoMaxBytes = showBucket ? 2 * 1024 * MB : 512 * MB;
+
+    toggleWidgetVisibility(urlWidget, showUrl);
+    toggleWidgetVisibility(bucketWidget, showBucket);
+    toggleWidgetVisibility(prefixWidget, showBucket);
+    mediaCtl.setUploaderVisible(showUploader);
+
+    if (mode === VIDEO_MODE_TOS_BUCKET) {
+      mediaCtl.setDropText(ui().dropVideoTos);
+    } else if (mode === VIDEO_MODE_LOCAL) {
+      mediaCtl.setDropText(ui().dropVideoLocal);
+    }
+
+    mediaCtl.applyMediaLayout();
+    refreshNodeLayout(node);
+  }
+
+  node._doubaoApplyVideoMode = applyVideoMode;
+
+  const originalCallback = modeWidget.callback;
+  modeWidget.callback = (value, ...args) => {
+    if (value !== undefined) {
+      modeWidget.value = value;
+    }
+    applyVideoMode({ inferLegacy: false });
+    if (originalCallback) {
+      originalCallback.call(modeWidget, value, ...args);
+    }
+  };
+
+  applyVideoMode({ inferLegacy: true });
 }
 
 function installModelPresetBinding(node) {
@@ -500,6 +743,17 @@ function installModelPresetBinding(node) {
 app.registerExtension({
   name: "comfyui.doubao.api.multimodal.widgets",
   beforeRegisterNodeDef(nodeType, nodeData) {
+    if (nodeData.name === "DoubaoVideoUpload") {
+      const originalOnConfigure = nodeType.prototype.onConfigure;
+      nodeType.prototype.onConfigure = function onConfigure() {
+        const result = originalOnConfigure ? originalOnConfigure.apply(this, arguments) : undefined;
+        if (typeof this._doubaoApplyVideoMode === "function") {
+          this._doubaoApplyVideoMode({ inferLegacy: true });
+        }
+        return result;
+      };
+    }
+
     const originalOnNodeCreated = nodeType.prototype.onNodeCreated;
     nodeType.prototype.onNodeCreated = function onNodeCreated() {
       const result = originalOnNodeCreated ? originalOnNodeCreated.apply(this, arguments) : undefined;
@@ -513,39 +767,27 @@ app.registerExtension({
           multiple: true,
           accept: ".jpg,.jpeg,.png,.webp,.bmp",
           fallbackMime: "image/png",
-          pathModeValue: IMAGE_MODE_PATH,
-          base64ModeValue: BASE64_MODE,
           pathField: "图片路径列表",
-          base64Field: "图片Base64列表",
-          base64NameField: null,
-          pickButtonText: "选择图片上传",
-          dropText: "拖拽图片到此处（支持多张）",
-          gridClass: "doubao-grid-3",
-          widgetHeight: 270,
-          modeRules: () => [],
+          pickButtonText: ui().pickImage,
+          dropText: ui().dropImages,
+          gridClass: "doubao-grid",
+          minWidgetHeight: 180,
         });
       }
       if (nodeData.name === "DoubaoVideoUpload") {
-        installMediaWidget(this, {
+        const mediaCtl = installMediaWidget(this, {
           kind: "video",
           multiple: false,
           accept: ".mp4,.avi,.mov,.mkv",
           fallbackMime: "video/mp4",
-          pathModeValue: VIDEO_MODE_PATH,
-          base64ModeValue: BASE64_MODE,
           pathField: "视频文件路径",
-          base64Field: "视频Base64内容",
-          base64NameField: null,
-          pickButtonText: "选择视频上传",
-          dropText: "拖拽视频到此处（仅单个）",
-          gridClass: "doubao-grid-1",
-          widgetHeight: 220,
-          modeRules: (modeValue) => [
-            ["TOS视频URL", modeValue === VIDEO_MODE_PATH],
-            ["TOS_Bucket", modeValue === VIDEO_MODE_PATH],
-            ["TOS_Prefix", modeValue === VIDEO_MODE_PATH],
-          ],
+          pickButtonText: ui().pickVideo,
+          dropText: ui().dropVideoLocal,
+          gridClass: "doubao-grid doubao-grid-1",
+          minWidgetHeight: 160,
+          getMaxBytes: () => this._doubaoVideoMaxBytes || 512 * MB,
         });
+        installVideoInputMode(this, mediaCtl);
       }
       if (nodeData.name === "DoubaoFileUpload") {
         installMediaWidget(this, {
@@ -553,16 +795,11 @@ app.registerExtension({
           multiple: false,
           accept: ".pdf,.txt,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.md",
           fallbackMime: "application/octet-stream",
-          pathModeValue: FILE_MODE_PATH,
-          base64ModeValue: BASE64_MODE,
           pathField: "文件路径",
-          base64Field: "文件Base64内容",
-          base64NameField: "Base64文件名",
-          pickButtonText: "选择文件上传",
-          dropText: "拖拽文档到此处（仅单个）",
-          gridClass: "doubao-grid-1",
-          widgetHeight: 220,
-          modeRules: () => [],
+          pickButtonText: ui().pickFile,
+          dropText: ui().dropFile,
+          gridClass: "doubao-grid doubao-grid-1",
+          minWidgetHeight: 160,
         });
       }
 

@@ -1,0 +1,178 @@
+{
+  "DoubaoModelConfig": {
+    "display_name": "Doubao Model Config",
+    "description": "API endpoint, key, and generation parameters for Doubao.",
+    "inputs": {
+      "base_url": {
+        "name": "Base URL",
+        "tooltip": "Volcengine Ark API base URL, e.g. https://ark.cn-beijing.volces.com/api/v3"
+      },
+      "api_key": {
+        "name": "API Key",
+        "tooltip": "Doubao / Ark API key (password field)"
+      },
+      "模型预设": {
+        "name": "Model Preset",
+        "tooltip": "Quickly fills model_id. Choose Custom to type an ID yourself.",
+        "options": {
+          "自定义": "Custom"
+        }
+      },
+      "model_id": {
+        "name": "Model ID",
+        "tooltip": "Model ID actually sent at runtime"
+      },
+      "max_tokens": {
+        "name": "Max Tokens",
+        "tooltip": "Maximum output tokens (1–4096)"
+      },
+      "temperature": {
+        "name": "Temperature",
+        "tooltip": "Sampling temperature (0.0–2.0)"
+      },
+      "top_p": {
+        "name": "Top P",
+        "tooltip": "Nucleus sampling (0.0–1.0)"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "config",
+        "tooltip": "Config object for Doubao Run"
+      }
+    }
+  },
+  "DoubaoTextInput": {
+    "display_name": "Doubao Text Input",
+    "description": "Multiline text prompt for Doubao Run.",
+    "inputs": {
+      "prompt": {
+        "name": "Prompt",
+        "tooltip": "User text sent to the model"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "text",
+        "tooltip": "Prompt string"
+      }
+    }
+  },
+  "DoubaoImageUpload": {
+    "display_name": "Doubao Image Upload",
+    "description": "Build an image list from local paths (up to 9 images, 512MB each).",
+    "inputs": {
+      "图片路径列表": {
+        "name": "Image Paths",
+        "tooltip": "One absolute image path per line. The upload UI fills this automatically."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "images",
+        "tooltip": "Image list for Doubao Run"
+      }
+    }
+  },
+  "DoubaoVideoUpload": {
+    "display_name": "Doubao Video Upload",
+    "description": "Local video (≤512MB), TOS bucket upload (≤2GB), or an existing tos:// URL.",
+    "inputs": {
+      "输入方式": {
+        "name": "Input Mode",
+        "tooltip": "How the video is provided to the API",
+        "options": {
+          "本地上传（≤512MB）": "Local upload (≤512MB)",
+          "TOS 对象存储上传（≤2GB）": "TOS object storage upload (≤2GB)",
+          "已有 TOS 视频地址": "Existing TOS video URL"
+        }
+      },
+      "视频文件路径": {
+        "name": "Video Path",
+        "tooltip": "Absolute path of a local video file. The upload UI fills this automatically."
+      },
+      "TOS视频URL": {
+        "name": "TOS Video URL",
+        "tooltip": "Existing object URL starting with tos://"
+      },
+      "TOS_Bucket": {
+        "name": "TOS Bucket",
+        "tooltip": "Volcengine TOS bucket name (required for TOS object storage upload)"
+      },
+      "TOS_Prefix": {
+        "name": "TOS Prefix",
+        "tooltip": "Optional object key prefix"
+      },
+      "fps": {
+        "name": "FPS",
+        "tooltip": "Video preprocessing FPS (0.2–5.0)"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "video",
+        "tooltip": "Video payload for Doubao Run"
+      }
+    }
+  },
+  "DoubaoFileUpload": {
+    "display_name": "Doubao File Upload",
+    "description": "Upload one document (pdf/txt/office/csv/md, ≤512MB).",
+    "inputs": {
+      "文件路径": {
+        "name": "File Path",
+        "tooltip": "Absolute path of a local document. The upload UI fills this automatically."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "file",
+        "tooltip": "File payload for Doubao Run"
+      }
+    }
+  },
+  "DoubaoRun": {
+    "display_name": "Doubao Run",
+    "description": "Call Doubao Responses API with text, images, video, and/or a document.",
+    "inputs": {
+      "config": {
+        "name": "config",
+        "tooltip": "Output from Doubao Model Config"
+      },
+      "stream": {
+        "name": "Stream",
+        "tooltip": "Use streaming responses"
+      },
+      "system_prompt": {
+        "name": "System Prompt",
+        "tooltip": "Optional system instruction"
+      },
+      "text": {
+        "name": "text",
+        "tooltip": "Optional user text"
+      },
+      "images": {
+        "name": "images",
+        "tooltip": "Optional image list"
+      },
+      "video": {
+        "name": "video",
+        "tooltip": "Optional video"
+      },
+      "file": {
+        "name": "file",
+        "tooltip": "Optional document"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "output",
+        "tooltip": "Model text output"
+      },
+      "1": {
+        "name": "usage",
+        "tooltip": "Token usage as a JSON string"
+      }
+    }
+  }
+}

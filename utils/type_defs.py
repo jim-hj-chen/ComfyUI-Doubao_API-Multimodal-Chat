@@ -46,9 +46,7 @@ class ConfigType(TypedDict):
 class MediaItem(TypedDict, total=False):
     """图片/视频/文件统一媒体条目。"""
 
-    mode: str
     path: str
-    data_uri: str
     mime_type: str
     file_name: str
     file_size: int
@@ -61,7 +59,6 @@ class MediaItem(TypedDict, total=False):
 class ImageListType(TypedDict):
     """图片列表结构。"""
 
-    mode: str
     items: List[MediaItem]
     total_bytes: int
 
@@ -69,14 +66,12 @@ class ImageListType(TypedDict):
 class VideoType(TypedDict):
     """视频结构。"""
 
-    mode: str
     item: MediaItem
 
 
 class FileType(TypedDict):
     """文档结构。"""
 
-    mode: str
     item: MediaItem
 
 

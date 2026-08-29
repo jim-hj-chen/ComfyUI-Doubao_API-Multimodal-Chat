@@ -8,9 +8,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from ..utils.api_client import DoubaoApiClient
 from ..utils.type_defs import ConfigType, FileType, ImageListType, VideoType
-from .file_upload import FILE_MODE_BASE64
-from .image_upload import IMAGE_MODE_BASE64
-from .video_upload import VIDEO_MODE_BASE64
 
 
 LOGGER = logging.getLogger("comfyui_doubao.doubao_run")
@@ -101,11 +98,8 @@ class DoubaoRun:
     ) -> List[Dict[str, Any]]:
         contents: List[Dict[str, Any]] = []
         for item in images.get("items", []):
-            if item.get("mode") == IMAGE_MODE_BASE64:
-                contents.append({"type": "input_image", "image_url": item["data_uri"]})
-            else:
-                uploaded = client.upload_file(item["path"])
-                contents.append({"type": "input_image", "file_id": uploaded["file_id"]})
+            uploaded = client.upload_file(item["path"])
+            contents.append({"type": "input_image", "file_id": uploaded["file_id"]})
         return contents
 
     def _build_video_contents(
@@ -114,9 +108,6 @@ class DoubaoRun:
         client: DoubaoApiClient,
     ) -> List[Dict[str, Any]]:
         item = video.get("item", {})
-        fps = float(item.get("fps", 1.0))
-        if item.get("mode") == VIDEO_MODE_BASE64:
-            return [{"type": "input_video", "video_url": item["data_uri"], "fps": fps}]
         uploaded = client.upload_file(**self._build_video_upload_kwargs(item))
         client.wait_for_file_ready(uploaded["file_id"])
         return [{"type": "input_video", "file_id": uploaded["file_id"]}]
@@ -145,14 +136,6 @@ class DoubaoRun:
         client: DoubaoApiClient,
     ) -> List[Dict[str, Any]]:
         item = file_data.get("item", {})
-        if item.get("mode") == FILE_MODE_BASE64:
-            return [
-                {
-                    "type": "input_file",
-                    "file_data": item["data_uri"],
-                    "filename": item["file_name"],
-                }
-            ]
         uploaded = client.upload_file(item["path"])
         client.wait_for_file_ready(uploaded["file_id"])
         return [{"type": "input_file", "file_id": uploaded["file_id"]}]

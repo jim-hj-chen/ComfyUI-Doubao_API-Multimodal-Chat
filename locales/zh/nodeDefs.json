@@ -1,0 +1,178 @@
+{
+  "DoubaoModelConfig": {
+    "display_name": "豆包模型配置",
+    "description": "豆包 API 地址、密钥与生成参数。",
+    "inputs": {
+      "base_url": {
+        "name": "接口地址",
+        "tooltip": "火山引擎方舟 API 的 base_url，默认 https://ark.cn-beijing.volces.com/api/v3"
+      },
+      "api_key": {
+        "name": "API 密钥",
+        "tooltip": "豆包 / 方舟 API Key（密码输入）"
+      },
+      "模型预设": {
+        "name": "模型预设",
+        "tooltip": "用于快速填充 model_id。选择「自定义」可手动填写。",
+        "options": {
+          "自定义": "自定义"
+        }
+      },
+      "model_id": {
+        "name": "模型 ID",
+        "tooltip": "运行时实际使用的模型 ID"
+      },
+      "max_tokens": {
+        "name": "最大 Token 数",
+        "tooltip": "最大输出 token 数（1–4096）"
+      },
+      "temperature": {
+        "name": "温度",
+        "tooltip": "采样温度（0.0–2.0）"
+      },
+      "top_p": {
+        "name": "Top P",
+        "tooltip": "核采样（0.0–1.0）"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "配置",
+        "tooltip": "供豆包运行节点使用的配置"
+      }
+    }
+  },
+  "DoubaoTextInput": {
+    "display_name": "豆包文本输入",
+    "description": "提供给豆包运行节点的多行文本。",
+    "inputs": {
+      "prompt": {
+        "name": "提示词",
+        "tooltip": "发给模型的用户文本"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "文本",
+        "tooltip": "提示词字符串"
+      }
+    }
+  },
+  "DoubaoImageUpload": {
+    "display_name": "豆包图片上传",
+    "description": "通过本地路径构建图片列表（最多 9 张，单张不超过 512MB）。",
+    "inputs": {
+      "图片路径列表": {
+        "name": "图片路径列表",
+        "tooltip": "每行一条图片绝对路径。选择或拖拽上传后会自动回填。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "图片",
+        "tooltip": "供豆包运行节点使用的图片列表"
+      }
+    }
+  },
+  "DoubaoVideoUpload": {
+    "display_name": "豆包视频上传",
+    "description": "本地视频（≤512MB）、TOS 对象存储上传（≤2GB），或已有 tos:// 地址。",
+    "inputs": {
+      "输入方式": {
+        "name": "输入方式",
+        "tooltip": "视频提供给 API 的方式",
+        "options": {
+          "本地上传（≤512MB）": "本地上传（≤512MB）",
+          "TOS 对象存储上传（≤2GB）": "TOS 对象存储上传（≤2GB）",
+          "已有 TOS 视频地址": "已有 TOS 视频地址"
+        }
+      },
+      "视频文件路径": {
+        "name": "视频文件路径",
+        "tooltip": "本地视频的绝对路径。选择或拖拽上传后会自动回填。"
+      },
+      "TOS视频URL": {
+        "name": "TOS 视频地址",
+        "tooltip": "已有对象地址，须以 tos:// 开头"
+      },
+      "TOS_Bucket": {
+        "name": "TOS Bucket",
+        "tooltip": "火山引擎 TOS 桶名（对象存储上传时必填）"
+      },
+      "TOS_Prefix": {
+        "name": "TOS Prefix",
+        "tooltip": "可选对象前缀"
+      },
+      "fps": {
+        "name": "帧率",
+        "tooltip": "视频预处理帧率（0.2–5.0）"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "视频",
+        "tooltip": "供豆包运行节点使用的视频"
+      }
+    }
+  },
+  "DoubaoFileUpload": {
+    "display_name": "豆包文件上传",
+    "description": "上传单个文档（pdf/txt/office/csv/md，不超过 512MB）。",
+    "inputs": {
+      "文件路径": {
+        "name": "文件路径",
+        "tooltip": "本地文档的绝对路径。选择或拖拽上传后会自动回填。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "文件",
+        "tooltip": "供豆包运行节点使用的文档"
+      }
+    }
+  },
+  "DoubaoRun": {
+    "display_name": "豆包运行",
+    "description": "整合文本、图片、视频、文档并调用豆包 Responses API。",
+    "inputs": {
+      "config": {
+        "name": "配置",
+        "tooltip": "来自豆包模型配置节点"
+      },
+      "stream": {
+        "name": "流式输出",
+        "tooltip": "是否使用流式响应"
+      },
+      "system_prompt": {
+        "name": "系统提示词",
+        "tooltip": "可选的系统指令"
+      },
+      "text": {
+        "name": "文本",
+        "tooltip": "可选用户文本"
+      },
+      "images": {
+        "name": "图片",
+        "tooltip": "可选图片列表"
+      },
+      "video": {
+        "name": "视频",
+        "tooltip": "可选视频"
+      },
+      "file": {
+        "name": "文件",
+        "tooltip": "可选文档"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "输出",
+        "tooltip": "模型文本输出"
+      },
+      "1": {
+        "name": "用量",
+        "tooltip": "Token 统计 JSON 字符串"
+      }
+    }
+  }
+}
