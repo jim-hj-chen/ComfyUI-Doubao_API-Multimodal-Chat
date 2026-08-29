@@ -17,6 +17,10 @@ const MEDIA_CARD_WIDTH = 152;
 const MEDIA_CARD_GAP = 14;
 const MEDIA_DEFAULT_COLUMNS = 3;
 const DOUBAO_MIN_NODE_WIDTH = 360;
+const DOUBAO_RUN_CORE_NODE_WIDTH = 440;
+const DOUBAO_RUN_CORE_NODE_HEIGHT = 300;
+const DOUBAO_RUN_CORE_MIN_WIDTH = 380;
+const DOUBAO_RUN_CORE_MIN_HEIGHT = 240;
 const DOUBAO_MEDIA_NODE_WIDTH =
   MEDIA_CARD_WIDTH * MEDIA_DEFAULT_COLUMNS +
   MEDIA_CARD_GAP * (MEDIA_DEFAULT_COLUMNS - 1) +
@@ -46,6 +50,10 @@ const UI_STRINGS = {
     uploading: "Uploading...",
     uploadComplete: "Upload complete.",
     uploadProgress: (percent) => `Upload progress: ${percent}%`,
+    cancelUpload: "Cancel",
+    uploadCancelled: "Upload cancelled.",
+    uploadTimeout: "Upload timed out. This batch was cancelled.",
+    uploadInProgress: "An upload is already in progress. Cancel it first.",
     imageCountLimit: "Too many images. Maximum is 9.",
     imageTotalTooLarge: "Images exceed 512MB in total (Doubao API processing limit).",
     videoTooLarge: (name, limitLabel, hint) =>
@@ -77,6 +85,10 @@ const UI_STRINGS = {
     uploading: "上传中...",
     uploadComplete: "上传完成。",
     uploadProgress: (percent) => `上传进度：${percent}%`,
+    cancelUpload: "取消",
+    uploadCancelled: "已取消上传。",
+    uploadTimeout: "上传超时，已取消本次任务。",
+    uploadInProgress: "正在上传中，请先取消当前任务。",
     imageCountLimit: "图片数量超限，最多允许 9 张。",
     imageTotalTooLarge: "图片合计超过 512MB（豆包 API 单次处理上限）。",
     videoTooLarge: (name, limitLabel, hint) =>
@@ -116,18 +128,51 @@ function findWidget(node, name) {
   return node.widgets?.find((widget) => widget.name === name);
 }
 
-function toggleWidgetVisibility(widget, visible) {
-  if (!widget) return;
-  if (!widget._doubaoOriginalComputeSize) {
-    widget._doubaoOriginalComputeSize = widget.computeSize;
-  }
-  widget.hidden = !visible;
-  widget.computeSize = visible
-    ? widget._doubaoOriginalComputeSize
-    : () => [0, -4];
+function widgetRowHeight() {
+  return globalThis.LiteGraph?.NODE_WIDGET_HEIGHT || 24;
 }
 
-function hideDoubaoRunTextWidgets(node) {
+function installWidgetVisibility(widget) {
+  if (!widget || widget._doubaoVisibilityHook) return;
+  widget._doubaoVisibilityHook = true;
+  widget._doubaoOriginalComputeSize = widget.computeSize;
+  widget.computeSize = function computeSizeGuarded(width) {
+    if (this.hidden) return [0, -4];
+    const original = this._doubaoOriginalComputeSize;
+    if (typeof original === "function") {
+      return original.call(this, width);
+    }
+    return [width || 200, widgetRowHeight()];
+  };
+}
+
+function widgetHostElement(widget) {
+  if (!widget) return null;
+  if (widget.element) return widget.element;
+  if (widget.inputEl?.closest) {
+    return (
+      widget.inputEl.closest(".lg-node-widget, [data-testid='node-widget']") ||
+      widget.inputEl
+    );
+  }
+  return widget.inputEl || null;
+}
+
+function toggleWidgetVisibility(widget, visible) {
+  if (!widget) return;
+  installWidgetVisibility(widget);
+  widget.hidden = !visible;
+  widget.computedHeight = visible ? widgetRowHeight() : 0;
+  const host = widgetHostElement(widget);
+  if (host) {
+    host.hidden = !visible;
+    if (host.style) {
+      host.style.display = visible ? "" : "none";
+    }
+  }
+}
+
+function hideDoubaoRunCoreTextWidgets(node) {
   for (const name of ["stream", "system_prompt", "user_prompt", "text"]) {
     const widget = findWidget(node, name);
     if (!widget) continue;
@@ -137,6 +182,152 @@ function hideDoubaoRunTextWidgets(node) {
     }
     toggleWidgetVisibility(findWidget(node, name), false);
   }
+}
+
+function injectDoubaoRunCoreStyles() {
+  const styleId = "doubao-run-layout-v1";
+  if (document.getElementById(styleId)) return;
+  const style = document.createElement("style");
+  style.id = styleId;
+  style.textContent = `
+    .doubao-run-core :has(> .lg-slot),
+    [data-node-type="DoubaoRunCore"] :has(> .lg-slot) {
+      justify-content: space-evenly !important;
+      align-self: stretch;
+      height: 100%;
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+    .doubao-run-core .lg-slot,
+    [data-node-type="DoubaoRunCore"] .lg-slot {
+      flex: 1 1 auto;
+      min-height: 20px;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function markDoubaoRunCoreDom(node) {
+  const id = node?.id;
+  if (id == null) return;
+  const el = document.querySelector(`[data-node-id="${CSS.escape(String(id))}"]`);
+  if (el) el.classList.add("doubao-run-core");
+}
+
+function usesVueNodeSlots() {
+  return Boolean(document.querySelector(".lg-slot"));
+}
+
+function visibleNodeSlots(slots) {
+  return (slots || []).filter((slot) => slot && slot.type !== -1 && !slot.hidden);
+}
+
+function layoutDoubaoRunCoreSlots(node) {
+  if (!node || usesVueNodeSlots()) return;
+  const LiteGraph = globalThis.LiteGraph || {};
+  const titleH = LiteGraph.NODE_TITLE_HEIGHT ?? NODE_TITLE_HEIGHT;
+  const slotH = LiteGraph.NODE_SLOT_HEIGHT ?? 20;
+  const inset = slotH * 0.5;
+  const width = Math.max(Number(node.size?.[0]) || 0, DOUBAO_RUN_CORE_MIN_WIDTH);
+  const height = Math.max(Number(node.size?.[1]) || 0, DOUBAO_RUN_CORE_MIN_HEIGHT);
+  const top = titleH + slotH * 0.25;
+  const usable = Math.max(slotH, height - top - NODE_BOTTOM_PADDING);
+
+  const place = (slots, isInput) => {
+    const items = visibleNodeSlots(slots);
+    if (!items.length) return;
+    const step = usable / items.length;
+    for (let i = 0; i < items.length; i += 1) {
+      const y = top + step * i + step * 0.5;
+      items[i].pos = isInput ? [inset, y] : [width + 1 - inset, y];
+    }
+  };
+
+  place(node.inputs, true);
+  place(node.outputs, false);
+}
+
+function applyDoubaoRunCoreSize(node, { preferDefault = false } = {}) {
+  if (!node) return;
+  node._doubaoMinWidth = Math.max(Number(node._doubaoMinWidth) || 0, DOUBAO_RUN_CORE_MIN_WIDTH);
+  node._doubaoMinHeight = Math.max(Number(node._doubaoMinHeight) || 0, DOUBAO_RUN_CORE_MIN_HEIGHT);
+  const currentW = Number(node.size?.[0]) || 0;
+  const currentH = Number(node.size?.[1]) || 0;
+  const nextW = Math.max(
+    currentW,
+    preferDefault || currentW < DOUBAO_RUN_CORE_MIN_WIDTH ? DOUBAO_RUN_CORE_NODE_WIDTH : DOUBAO_RUN_CORE_MIN_WIDTH
+  );
+  const nextH = Math.max(
+    currentH,
+    preferDefault || currentH < DOUBAO_RUN_CORE_MIN_HEIGHT ? DOUBAO_RUN_CORE_NODE_HEIGHT : DOUBAO_RUN_CORE_MIN_HEIGHT
+  );
+  if (currentW !== nextW || currentH !== nextH) {
+    if (typeof node.setSize === "function") {
+      node.setSize([nextW, nextH]);
+    } else {
+      node.size = [nextW, nextH];
+    }
+  }
+  layoutDoubaoRunCoreSlots(node);
+}
+
+function installDoubaoRunCoreLayout(node) {
+  if (!node) return;
+  injectDoubaoRunCoreStyles();
+  applyDoubaoRunCoreSize(node, { preferDefault: true });
+  if (node._doubaoRunCoreLayout) {
+    layoutDoubaoRunCoreSlots(node);
+    return;
+  }
+  node._doubaoRunCoreLayout = true;
+  const originalOnResize = node.onResize;
+  node.onResize = function onResizeDoubaoRunCore(size) {
+    if (size?.[0] < DOUBAO_RUN_CORE_MIN_WIDTH) size[0] = DOUBAO_RUN_CORE_MIN_WIDTH;
+    if (size?.[1] < DOUBAO_RUN_CORE_MIN_HEIGHT) size[1] = DOUBAO_RUN_CORE_MIN_HEIGHT;
+    if (this.size?.[0] < DOUBAO_RUN_CORE_MIN_WIDTH) this.size[0] = DOUBAO_RUN_CORE_MIN_WIDTH;
+    if (this.size?.[1] < DOUBAO_RUN_CORE_MIN_HEIGHT) this.size[1] = DOUBAO_RUN_CORE_MIN_HEIGHT;
+    if (originalOnResize) originalOnResize.apply(this, arguments);
+    markDoubaoRunCoreDom(this);
+    layoutDoubaoRunCoreSlots(this);
+  };
+  const originalOnDrawForeground = node.onDrawForeground;
+  node.onDrawForeground = function onDrawForegroundDoubaoRunCore() {
+    markDoubaoRunCoreDom(this);
+    layoutDoubaoRunCoreSlots(this);
+    if (originalOnDrawForeground) {
+      return originalOnDrawForeground.apply(this, arguments);
+    }
+    return undefined;
+  };
+  layoutDoubaoRunCoreSlots(node);
+  markDoubaoRunCoreDom(node);
+}
+
+function installDoubaoRunCoreSizeDefaults(nodeType) {
+  nodeType.prototype._doubaoMinWidth = DOUBAO_RUN_CORE_MIN_WIDTH;
+  nodeType.prototype._doubaoMinHeight = DOUBAO_RUN_CORE_MIN_HEIGHT;
+  if (!Array.isArray(nodeType.size) || nodeType.size[0] < DOUBAO_RUN_CORE_NODE_WIDTH) {
+    nodeType.size = [DOUBAO_RUN_CORE_NODE_WIDTH, DOUBAO_RUN_CORE_NODE_HEIGHT];
+  }
+  if (nodeType.prototype._doubaoRunCoreComputeSizeGuard) return;
+  nodeType.prototype._doubaoRunCoreComputeSizeGuard = true;
+  const originalComputeSize = nodeType.prototype.computeSize;
+  nodeType.prototype.computeSize = function doubaoRunComputeSize(out) {
+    const size = originalComputeSize
+      ? originalComputeSize.apply(this, arguments)
+      : [DOUBAO_RUN_CORE_NODE_WIDTH, DOUBAO_RUN_CORE_NODE_HEIGHT];
+    const minWidth = Number(this._doubaoMinWidth) || DOUBAO_RUN_CORE_MIN_WIDTH;
+    const minHeight = Number(this._doubaoMinHeight) || DOUBAO_RUN_CORE_MIN_HEIGHT;
+    if (Array.isArray(size) && size.length >= 2) {
+      size[0] = Math.max(Number(size[0]) || 0, minWidth);
+      size[1] = Math.max(Number(size[1]) || 0, minHeight);
+    }
+    if (Array.isArray(out) && out.length >= 2 && Array.isArray(size)) {
+      out[0] = size[0];
+      out[1] = size[1];
+    }
+    return size;
+  };
 }
 
 function formatBytes(sizeBytes) {
@@ -161,10 +352,11 @@ function notifyError(message) {
 }
 
 function injectStyles() {
-  const styleId = "doubao-media-style-v4";
+  const styleId = "doubao-media-style-v5";
   document.getElementById("doubao-media-style")?.remove();
   document.getElementById("doubao-media-style-v2")?.remove();
   document.getElementById("doubao-media-style-v3")?.remove();
+  document.getElementById("doubao-media-style-v4")?.remove();
   if (document.getElementById(styleId)) return;
   const style = document.createElement("style");
   style.id = styleId;
@@ -230,18 +422,39 @@ function injectStyles() {
       flex-direction: column;
       justify-content: center;
       gap: 4px;
-      min-height: 32px;
+      min-height: 40px;
     }
     .doubao-progress:not(.is-active) {
       visibility: hidden;
     }
+    .doubao-progress-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
     .doubao-progress-outer {
-      width: 100%;
+      flex: 1;
+      min-width: 0;
+      width: auto;
       height: 8px;
       border-radius: 999px;
       background: #2d3443;
       overflow: hidden;
     }
+    .doubao-cancel {
+      flex: 0 0 auto;
+      padding: 2px 10px;
+      border: 1px solid #556;
+      background: #3b4252;
+      color: #eceff4;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      line-height: 1.4;
+    }
+    .doubao-cancel:hover:not(:disabled) { background: #4c566a; }
+    .doubao-cancel:disabled { opacity: 0.45; cursor: default; }
     .doubao-progress-inner {
       width: 0;
       height: 100%;
@@ -457,6 +670,23 @@ function mediaTypeForKind(kind) {
   return "file";
 }
 
+const UPLOAD_STALL_MS = 60 * 1000;
+const UPLOAD_MIN_TIMEOUT_MS = 90 * 1000;
+const UPLOAD_OVERHEAD_MS = 45 * 1000;
+const UPLOAD_MAX_TIMEOUT_MS = 4 * 60 * 60 * 1000;
+const UPLOAD_MIN_BYTES_PER_SEC = 64 * 1024;
+
+function uploadTimeoutMs(sizeBytes) {
+  const transferMs = Math.ceil((Math.max(Number(sizeBytes) || 0, 1) / UPLOAD_MIN_BYTES_PER_SEC) * 1000);
+  return Math.min(UPLOAD_MAX_TIMEOUT_MS, Math.max(UPLOAD_MIN_TIMEOUT_MS, UPLOAD_OVERHEAD_MS + transferMs));
+}
+
+function makeUploadError(message, code) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
 function uploadPathModeFile(file, kind, handlers = {}) {
   return new Promise((resolve, reject) => {
     const formData = new FormData();
@@ -466,8 +696,46 @@ function uploadPathModeFile(file, kind, handlers = {}) {
     const request = new XMLHttpRequest();
     request.open("POST", api.apiURL("/doubao/upload"), true);
 
+    let settled = false;
+    let lastProgressAt = Date.now();
+    let watchStall = true;
+    const timeoutMs =
+      Number(handlers.timeoutMs) > 0 ? Number(handlers.timeoutMs) : uploadTimeoutMs(file.size);
+
+    const finish = (ok, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(hardTimer);
+      clearInterval(stallTimer);
+      if (ok) resolve(value);
+      else reject(value);
+    };
+
+    const abortWith = (code) => {
+      if (settled) return;
+      const message = code === "timeout" ? ui().uploadTimeout : ui().uploadCancelled;
+      finish(false, makeUploadError(message, code));
+      try {
+        request.abort();
+      } catch (error) {
+        console.error(error);
+      }
+    };
+
+    const hardTimer = setTimeout(() => abortWith("timeout"), timeoutMs);
+    const stallTimer = setInterval(() => {
+      if (settled || !watchStall) return;
+      if (Date.now() - lastProgressAt >= UPLOAD_STALL_MS) {
+        abortWith("timeout");
+      }
+    }, 1000);
+
+    request.timeout = timeoutMs;
+    request.ontimeout = () => abortWith("timeout");
+
     if (typeof handlers.onProgress === "function") {
       request.upload.onprogress = (event) => {
+        lastProgressAt = Date.now();
         if (!event.lengthComputable || event.total <= 0) return;
         const percent = Math.max(
           0,
@@ -475,10 +743,23 @@ function uploadPathModeFile(file, kind, handlers = {}) {
         );
         handlers.onProgress(percent);
       };
+    } else {
+      request.upload.onprogress = () => {
+        lastProgressAt = Date.now();
+      };
     }
 
+    request.upload.onload = () => {
+      watchStall = false;
+      lastProgressAt = Date.now();
+    };
+
+    request.onabort = () => {
+      if (!settled) abortWith("cancelled");
+    };
+
     request.onerror = () => {
-      reject(new Error(ui().uploadNetworkError));
+      finish(false, new Error(ui().uploadNetworkError));
     };
 
     request.onload = () => {
@@ -491,20 +772,24 @@ function uploadPathModeFile(file, kind, handlers = {}) {
 
       if (request.status < 200 || request.status >= 300) {
         const detail = payload?.error ? ` ${payload.error}` : "";
-        reject(new Error(`${ui().uploadFailedComfy}${detail}`));
+        finish(false, new Error(`${ui().uploadFailedComfy}${detail}`));
         return;
       }
 
       if (!payload?.ok || !payload?.path) {
-        reject(new Error(payload?.error || ui().invalidServerPath));
+        finish(false, new Error(payload?.error || ui().invalidServerPath));
         return;
       }
 
       if (typeof handlers.onProgress === "function") {
         handlers.onProgress(100);
       }
-      resolve(payload);
+      finish(true, payload);
     };
+
+    if (typeof handlers.onAbort === "function") {
+      handlers.onAbort(() => abortWith("cancelled"));
+    }
 
     request.send(formData);
   });
@@ -525,22 +810,73 @@ function showModal(contentNode) {
   document.body.appendChild(modal);
 }
 
+function extraVideoWidgetRows(node) {
+  return ["TOS视频URL", "TOS_Bucket", "TOS_Prefix"].filter((name) => {
+    const widget = findWidget(node, name);
+    return Boolean(widget && !widget.hidden);
+  }).length;
+}
+
+function syncMediaMinHeight(node) {
+  if (!node?._doubaoMinHeight && !node?._doubaoMinWidth) return;
+  node._doubaoMinWidth = Math.max(
+    Number(node._doubaoMinWidth) || 0,
+    DOUBAO_MEDIA_NODE_WIDTH
+  );
+  node._doubaoMinHeight =
+    DOUBAO_MEDIA_NODE_HEIGHT + extraVideoWidgetRows(node) * (widgetRowHeight() + 4);
+}
+
 function refreshNodeLayout(node) {
+  syncMediaMinHeight(node);
   if (typeof node.computeSize === "function") {
     const nextSize = node.computeSize(node.size);
     if (Array.isArray(nextSize) && nextSize.length >= 2) {
       const minWidth = getNodeMinWidth(node);
       const minHeight = getNodeMinHeight(node);
-      const width = Math.max(node.size?.[0] || 0, nextSize[0], minWidth);
-      const height = Math.max(node.size?.[1] || 0, nextSize[1], minHeight);
+      const width = Math.max(node.size?.[0] || 0, nextSize[0] || 0, minWidth);
+      const height = Math.max(node.size?.[1] || 0, nextSize[1] || 0, minHeight);
       if (typeof node.setSize === "function") {
         node.setSize([width, height]);
       } else {
         node.size = [width, height];
       }
     }
+  } else {
+    ensureNodeMinSize(node);
   }
+  if (typeof node.onResize === "function") {
+    node.onResize(node.size);
+  }
+  padOverlayInputs(node);
   node.setDirtyCanvas(true, true);
+}
+
+function installMediaNodeSizeDefaults(nodeType) {
+  nodeType.prototype._doubaoMinWidth = DOUBAO_MEDIA_NODE_WIDTH;
+  nodeType.prototype._doubaoMinHeight = DOUBAO_MEDIA_NODE_HEIGHT;
+  if (!Array.isArray(nodeType.size) || nodeType.size[0] < DOUBAO_MEDIA_NODE_WIDTH) {
+    nodeType.size = [DOUBAO_MEDIA_NODE_WIDTH, DOUBAO_MEDIA_NODE_HEIGHT];
+  }
+  if (nodeType.prototype._doubaoComputeSizeGuard) return;
+  nodeType.prototype._doubaoComputeSizeGuard = true;
+  const originalComputeSize = nodeType.prototype.computeSize;
+  nodeType.prototype.computeSize = function doubaoMediaComputeSize(out) {
+    const size = originalComputeSize
+      ? originalComputeSize.apply(this, arguments)
+      : [DOUBAO_MEDIA_NODE_WIDTH, DOUBAO_MEDIA_NODE_HEIGHT];
+    const minWidth = Number(this._doubaoMinWidth) || DOUBAO_MEDIA_NODE_WIDTH;
+    const minHeight = Number(this._doubaoMinHeight) || DOUBAO_MEDIA_NODE_HEIGHT;
+    if (Array.isArray(size) && size.length >= 2) {
+      size[0] = Math.max(Number(size[0]) || 0, minWidth);
+      size[1] = Math.max(Number(size[1]) || 0, minHeight);
+    }
+    if (Array.isArray(out) && out.length >= 2 && Array.isArray(size)) {
+      out[0] = size[0];
+      out[1] = size[1];
+    }
+    return size;
+  };
 }
 
 const DOUBAO_NODE_NAMES = new Set([
@@ -549,7 +885,7 @@ const DOUBAO_NODE_NAMES = new Set([
   "DoubaoImageUpload",
   "DoubaoVideoUpload",
   "DoubaoFileUpload",
-  "DoubaoRun",
+  "DoubaoRunCore",
 ]);
 
 function getNodeMinWidth(node) {
@@ -712,15 +1048,24 @@ function installMediaWidget(node, options) {
 
   const progressWrap = document.createElement("div");
   progressWrap.className = "doubao-progress";
+  const progressRow = document.createElement("div");
+  progressRow.className = "doubao-progress-row";
   const progressBarOuter = document.createElement("div");
   progressBarOuter.className = "doubao-progress-outer";
   const progressBarInner = document.createElement("div");
   progressBarInner.className = "doubao-progress-inner";
   progressBarInner.style.width = "0%";
   progressBarOuter.appendChild(progressBarInner);
+  const cancelBtn = document.createElement("button");
+  cancelBtn.className = "doubao-cancel";
+  cancelBtn.type = "button";
+  cancelBtn.textContent = ui().cancelUpload;
+  cancelBtn.disabled = true;
+  progressRow.appendChild(progressBarOuter);
+  progressRow.appendChild(cancelBtn);
   const progressText = document.createElement("div");
   progressText.className = "doubao-progress-text";
-  progressWrap.appendChild(progressBarOuter);
+  progressWrap.appendChild(progressRow);
   progressWrap.appendChild(progressText);
 
   const hint = document.createElement("div");
@@ -807,8 +1152,9 @@ function installMediaWidget(node, options) {
   }
 
   let progressHideTimer = null;
+  let uploadSession = null;
 
-  function setUploadProgress(percent, statusText = "") {
+  function setUploadProgress(percent, statusText = "", canCancel = true) {
     if (progressHideTimer) {
       clearTimeout(progressHideTimer);
       progressHideTimer = null;
@@ -817,6 +1163,7 @@ function installMediaWidget(node, options) {
     progressBarInner.style.width = `${safePercent}%`;
     progressText.textContent = statusText || ui().uploadProgress(safePercent);
     progressWrap.classList.add("is-active");
+    cancelBtn.disabled = !canCancel;
   }
 
   function hideUploadProgress() {
@@ -827,6 +1174,7 @@ function installMediaWidget(node, options) {
     progressWrap.classList.remove("is-active");
     progressBarInner.style.width = "0%";
     progressText.textContent = "";
+    cancelBtn.disabled = true;
   }
 
   function scheduleHideUploadProgress(delayMs = 2000) {
@@ -970,6 +1318,10 @@ function installMediaWidget(node, options) {
   }
 
   async function processFiles(files) {
+    if (uploadSession) {
+      notifyError(ui().uploadInProgress);
+      return;
+    }
     const current = state.pathItems;
     const incoming = Array.from(files || []);
     if (!incoming.length) return;
@@ -1006,8 +1358,11 @@ function installMediaWidget(node, options) {
     }
 
     const totalFiles = incoming.length;
-    setUploadProgress(0, ui().uploading);
+    const session = { aborted: false, abortCurrent: null };
+    uploadSession = session;
+    setUploadProgress(0, ui().uploading, true);
     for (const [index, file] of incoming.entries()) {
+      if (session.aborted) break;
       const item = {
         name: file.name,
         size: file.size || 0,
@@ -1016,17 +1371,26 @@ function installMediaWidget(node, options) {
       let uploadResult;
       try {
         uploadResult = await uploadPathModeFile(file, options.kind, {
+          timeoutMs: uploadTimeoutMs(file.size),
+          onAbort: (abortFn) => {
+            session.abortCurrent = abortFn;
+          },
           onProgress: (filePercent) => {
             const overall = ((index + filePercent / 100) / totalFiles) * 100;
-            setUploadProgress(overall);
+            setUploadProgress(overall, ui().uploadProgress(Math.round(overall)), true);
           },
         });
       } catch (error) {
-        setUploadProgress(0, error.message || ui().pathUploadFailed);
-        notifyError(error.message || ui().pathUploadFailed);
+        const code = error?.code;
+        const message = error?.message || ui().pathUploadFailed;
+        setUploadProgress(0, message, false);
+        if (code !== "cancelled") {
+          notifyError(message);
+        }
         syncWidgets();
         renderCards();
         scheduleHideUploadProgress();
+        uploadSession = null;
         return;
       }
       item.path = uploadResult.path;
@@ -1037,13 +1401,28 @@ function installMediaWidget(node, options) {
       current.push(item);
     }
 
-    setUploadProgress(100, ui().uploadComplete);
+    uploadSession = null;
+    if (session.aborted) {
+      setUploadProgress(0, ui().uploadCancelled, false);
+      syncWidgets();
+      renderCards();
+      scheduleHideUploadProgress();
+      return;
+    }
+    setUploadProgress(100, ui().uploadComplete, false);
     syncWidgets();
     renderCards();
     scheduleHideUploadProgress();
   }
 
+  function abortActiveUpload() {
+    if (!uploadSession) return;
+    uploadSession.aborted = true;
+    uploadSession.abortCurrent?.();
+  }
+
   function clearCurrent() {
+    abortActiveUpload();
     state.pathItems.forEach(revokeItemUrl);
     state.pathItems.splice(0, state.pathItems.length);
     syncWidgets();
@@ -1065,6 +1444,11 @@ function installMediaWidget(node, options) {
 
   pickBtn.addEventListener("click", () => fileInput.click());
   clearBtn.addEventListener("click", clearCurrent);
+  cancelBtn.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    abortActiveUpload();
+  });
   fileInput.addEventListener("change", async (event) => {
     await processFiles(event.target.files);
     fileInput.value = "";
@@ -1184,8 +1568,13 @@ function installVideoInputMode(node, mediaCtl) {
       mediaCtl.setDropText(ui().dropVideoLocal);
     }
 
-    mediaCtl.applyMediaLayout();
+    syncMediaMinHeight(node);
     refreshNodeLayout(node);
+    requestAnimationFrame(() => {
+      syncMediaMinHeight(node);
+      refreshNodeLayout(node);
+      mediaCtl.applyMediaLayout();
+    });
   }
 
   node._doubaoApplyVideoMode = applyVideoMode;
@@ -1230,7 +1619,8 @@ app.registerExtension({
     setTruncateWidgetValuesFirst(true);
   },
   beforeRegisterNodeDef(nodeType, nodeData) {
-    if (nodeData.name === "DoubaoRun") {
+    if (nodeData.name === "DoubaoRunCore") {
+      installDoubaoRunCoreSizeDefaults(nodeType);
       const forcePromptInputs = (group) => {
         if (!group) return;
         for (const key of ["system_prompt", "user_prompt", "text"]) {
@@ -1244,9 +1634,14 @@ app.registerExtension({
       const originalOnConfigure = nodeType.prototype.onConfigure;
       nodeType.prototype.onConfigure = function onConfigure() {
         const result = originalOnConfigure ? originalOnConfigure.apply(this, arguments) : undefined;
-        hideDoubaoRunTextWidgets(this);
+        hideDoubaoRunCoreTextWidgets(this);
+        applyDoubaoRunCoreSize(this, { preferDefault: false });
         return result;
       };
+    }
+
+    if (["DoubaoImageUpload", "DoubaoVideoUpload", "DoubaoFileUpload"].includes(nodeData.name)) {
+      installMediaNodeSizeDefaults(nodeType);
     }
 
     if (nodeData.name === "DoubaoVideoUpload") {
@@ -1267,8 +1662,8 @@ app.registerExtension({
       if (DOUBAO_NODE_NAMES.has(nodeData.name)) {
         injectStyles();
       }
-      if (nodeData.name === "DoubaoRun") {
-        hideDoubaoRunTextWidgets(this);
+      if (nodeData.name === "DoubaoRunCore") {
+        hideDoubaoRunCoreTextWidgets(this);
       }
       if (nodeData.name === "DoubaoModelConfig") {
         installModelPresetBinding(this);
@@ -1324,6 +1719,9 @@ app.registerExtension({
       if (DOUBAO_NODE_NAMES.has(nodeData.name)) {
         installLabelSafeWidgets(this);
         ensureNodeMinSize(this);
+      }
+      if (nodeData.name === "DoubaoRunCore") {
+        installDoubaoRunCoreLayout(this);
       }
 
       return result;

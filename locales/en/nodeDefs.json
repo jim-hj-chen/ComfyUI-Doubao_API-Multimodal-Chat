@@ -42,23 +42,23 @@
     "outputs": {
       "0": {
         "name": "config",
-        "tooltip": "Config object for Doubao Run"
+        "tooltip": "Config object for Doubao Run Core"
       }
     }
   },
   "DoubaoTextInput": {
     "display_name": "Doubao Text Input",
-    "description": "Multiline prompt. Connect to Doubao Run System Prompt or User Prompt.",
+    "description": "Multiline prompt. Connect to Doubao Run Core System Prompt or User Prompt.",
     "inputs": {
       "prompt": {
         "name": "Prompt",
-        "tooltip": "Text content. Connect this node's output to System Prompt or User Prompt on Doubao Run."
+        "tooltip": "Text content. Connect this node's output to System Prompt or User Prompt on Doubao Run Core."
       }
     },
     "outputs": {
       "0": {
         "name": "text",
-        "tooltip": "Prompt string for Doubao Run"
+        "tooltip": "Prompt string for Doubao Run Core"
       }
     }
   },
@@ -74,7 +74,7 @@
     "outputs": {
       "0": {
         "name": "images",
-        "tooltip": "Image list for Doubao Run"
+        "tooltip": "Image list for Doubao Run Core"
       }
     }
   },
@@ -111,7 +111,7 @@
     "outputs": {
       "0": {
         "name": "video",
-        "tooltip": "Video payload for Doubao Run"
+        "tooltip": "Video payload for Doubao Run Core"
       }
     }
   },
@@ -127,17 +127,17 @@
     "outputs": {
       "0": {
         "name": "file",
-        "tooltip": "File payload for Doubao Run"
+        "tooltip": "File payload for Doubao Run Core"
       }
     }
   },
-  "DoubaoRun": {
-    "display_name": "Doubao Run",
-    "description": "Call Doubao Responses API with text, images, video, and/or a document.",
+  "DoubaoRunCore": {
+    "display_name": "Doubao Run Core",
+    "description": "Run core: gather config, prompts, and multimodal inputs, then call Doubao Responses API.",
     "inputs": {
       "config": {
-        "name": "config",
-        "tooltip": "Output from Doubao Model Config"
+        "name": "Config (required)",
+        "tooltip": "Must connect Doubao Model Config"
       },
       "stream": {
         "name": "Stream",

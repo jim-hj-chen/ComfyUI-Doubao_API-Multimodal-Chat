@@ -10,7 +10,7 @@
   - `DoubaoImageUpload`（豆包图片上传）
   - `DoubaoVideoUpload`（豆包视频上传）
   - `DoubaoFileUpload`（豆包文件上传）
-  - `DoubaoRun`（豆包运行）
+  - `DoubaoRunCore`（豆包运行核心）
 - 响应模式：支持非流式 / 流式
 - 文件输入：通过本地路径上传到 Files API（浏览器选择或拖拽会先写入 ComfyUI 服务器，再回填绝对路径）
 - 输出：
@@ -43,7 +43,7 @@ pip install -r requirements.txt
 
 ### 2) DoubaoTextInput
 
-- `prompt`：多行文本输入；输出可接到豆包运行的「系统提示词」或「用户提示词」
+- `prompt`：多行文本输入；输出可接到豆包运行核心的「系统提示词」或「用户提示词」
 
 ### 3) DoubaoImageUpload
 
@@ -93,7 +93,7 @@ pip install -r requirements.txt
 - 远程部署说明（AutoDL 等）：
   - 上传会先保存到 `ComfyUI/input/doubao_file`，再回填服务器路径
 
-### 6) DoubaoRun
+### 6) DoubaoRunCore（豆包运行核心）
 
 - 输入：
   - `config`（必填）
@@ -107,21 +107,21 @@ pip install -r requirements.txt
 
 ### 文本 + 图片
 
-`DoubaoModelConfig -> DoubaoRun(config)`  
-`DoubaoTextInput -> DoubaoRun(user_prompt)`（系统提示词同理接到 `system_prompt`）  
-`DoubaoImageUpload -> DoubaoRun(images)`
+`DoubaoModelConfig -> DoubaoRunCore(config)`  
+`DoubaoTextInput -> DoubaoRunCore(user_prompt)`（系统提示词同理接到 `system_prompt`）  
+`DoubaoImageUpload -> DoubaoRunCore(images)`
 
 ### 文本 + 视频
 
-`DoubaoModelConfig -> DoubaoRun(config)`  
-`DoubaoTextInput -> DoubaoRun(user_prompt)`  
-`DoubaoVideoUpload -> DoubaoRun(video)`
+`DoubaoModelConfig -> DoubaoRunCore(config)`  
+`DoubaoTextInput -> DoubaoRunCore(user_prompt)`  
+`DoubaoVideoUpload -> DoubaoRunCore(video)`
 
 ### 文本 + 文档
 
-`DoubaoModelConfig -> DoubaoRun(config)`  
-`DoubaoTextInput -> DoubaoRun(user_prompt)`  
-`DoubaoFileUpload -> DoubaoRun(file)`
+`DoubaoModelConfig -> DoubaoRunCore(config)`  
+`DoubaoTextInput -> DoubaoRunCore(user_prompt)`  
+`DoubaoFileUpload -> DoubaoRunCore(file)`
 
 ## 常见问题
 

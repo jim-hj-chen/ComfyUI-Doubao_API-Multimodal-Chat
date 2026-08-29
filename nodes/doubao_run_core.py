@@ -1,4 +1,4 @@
-"""Doubao Run 核心执行节点。"""
+"""豆包运行核心：汇总会话输入并调用 Doubao Responses API。"""
 
 from __future__ import annotations
 
@@ -10,12 +10,12 @@ from ..utils.api_client import DoubaoApiClient, DoubaoApiError
 from ..utils.type_defs import ConfigType, FileType, ImageListType, VideoType
 
 
-LOGGER = logging.getLogger("comfyui_doubao.doubao_run")
+LOGGER = logging.getLogger("comfyui_doubao.doubao_run_core")
 DEFAULT_TIMEOUT_SECONDS = 180
 
 
-class DoubaoRun:
-    """整合文本、图片、视频、文档并调用 Doubao Responses API。"""
+class DoubaoRunCore:
+    """工作流运行核心：汇聚配置、提示词与多模态输入并调用 Doubao Responses API。"""
 
     CATEGORY = "Doubao API"
     RETURN_TYPES = ("STRING", "STRING")
@@ -40,10 +40,8 @@ class DoubaoRun:
     def run(
         self,
         config: ConfigType,
-        stream: bool = False,  # 兼容旧工作流；界面已隐藏，始终按非流式请求
         system_prompt: str = "",
         user_prompt: Optional[str] = None,
-        text: Optional[str] = None,  # 兼容旧工作流中的 text 输入
         images: Optional[ImageListType] = None,
         video: Optional[VideoType] = None,
         file: Optional[FileType] = None,
@@ -72,7 +70,7 @@ class DoubaoRun:
             user_content.extend(self._build_video_contents(video, client))
         if file:
             user_content.extend(self._build_file_contents(file, client))
-        user_text = (user_prompt if user_prompt is not None else text) or ""
+        user_text = user_prompt or ""
         if user_text.strip():
             user_content.append({"type": "input_text", "text": user_text.strip()})
 
