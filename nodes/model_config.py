@@ -26,8 +26,8 @@ class DoubaoModelConfig:
                 "api_key": ("STRING", {"default": "", "multiline": False, "password": True}),
                 "模型预设": (MODEL_PRESETS, {"default": "doubao-seed-evolving"}),
                 "model_id": ("STRING", {"default": "doubao-seed-evolving"}),
-                "max_tokens": ("INT", {"default": 1024, "min": 1, "max": 4096, "step": 1}),
-                "temperature": ("FLOAT", {"default": 0.7, "min": 0.0, "max": 2.0, "step": 0.01}),
+                "max_tokens": ("INT", {"default": 4096, "min": 1, "max": 4096, "step": 1}),
+                "temperature": ("FLOAT", {"default": 0.4, "min": 0.0, "max": 2.0, "step": 0.01}),
                 "top_p": ("FLOAT", {"default": 0.9, "min": 0.0, "max": 1.0, "step": 0.01}),
                 "timeout_seconds": ("INT", {"default": 180, "min": 60, "max": 600, "step": 1}),
             }

@@ -6,7 +6,7 @@ import json
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 
-from ..utils.api_client import DoubaoApiClient, DoubaoApiError
+from ..utils.api_client import DEFAULT_FILE_WAIT_SECONDS, DoubaoApiClient, DoubaoApiError
 from ..utils.type_defs import ConfigType, FileType, ImageListType, VideoType
 
 
@@ -116,7 +116,11 @@ class DoubaoRunCore:
         except DoubaoApiError as error:
             raise ValueError(f"上传到 Doubao Files API 失败（视频）：{error}") from error
         try:
-            client.wait_for_file_ready(uploaded["file_id"])
+            client.wait_for_file_ready(
+                uploaded["file_id"],
+                max_wait_seconds=self._file_wait_seconds(client),
+                initial=uploaded.get("raw"),
+            )
         except DoubaoApiError as error:
             raise ValueError(f"等待 Doubao 文件处理失败（视频）：{error}") from error
         return [{"type": "input_video", "file_id": uploaded["file_id"]}]
@@ -150,7 +154,11 @@ class DoubaoRunCore:
         except DoubaoApiError as error:
             raise ValueError(f"上传到 Doubao Files API 失败（文档）：{error}") from error
         try:
-            client.wait_for_file_ready(uploaded["file_id"])
+            client.wait_for_file_ready(
+                uploaded["file_id"],
+                max_wait_seconds=self._file_wait_seconds(client),
+                initial=uploaded.get("raw"),
+            )
         except DoubaoApiError as error:
             raise ValueError(f"等待 Doubao 文件处理失败（文档）：{error}") from error
         return [{"type": "input_file", "file_id": uploaded["file_id"]}]
@@ -165,3 +173,8 @@ class DoubaoRunCore:
         timeout_seconds = int(config.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS))
         if timeout_seconds < 1:
             raise ValueError("timeout_seconds 必须为正整数。")
+
+    @staticmethod
+    def _file_wait_seconds(client: DoubaoApiClient) -> int:
+        """视频/文档预处理等待上限：不低于 HTTP 超时，且至少 300 秒。"""
+        return max(DEFAULT_FILE_WAIT_SECONDS, int(client.timeout_seconds))

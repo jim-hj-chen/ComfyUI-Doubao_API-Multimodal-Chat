@@ -17,6 +17,15 @@ from .type_defs import StreamResult
 LOGGER = logging.getLogger("comfyui_doubao.api_client")
 LOCAL_FILE_ID_CACHE: Dict[str, Dict[str, Any]] = {}
 
+# 方舟 Files API 官方枚举为 active / processing / failed（见 arkruntime file.Status*）。
+# processed 等为文档或其它网关别名，一并视为就绪。
+FILE_READY_STATUSES = frozenset({"active", "processed", "succeeded", "completed", "ready"})
+FILE_PROCESSING_STATUSES = frozenset(
+    {"processing", "pending", "queued", "uploaded", "in_progress", "in-progress"}
+)
+FILE_FAILED_STATUSES = frozenset({"failed", "error", "cancelled", "canceled", "deleted"})
+DEFAULT_FILE_WAIT_SECONDS = 300
+
 
 class DoubaoApiError(RuntimeError):
     """豆包 API 业务异常。"""
@@ -130,24 +139,44 @@ class DoubaoApiClient:
         self,
         file_id: str,
         poll_interval_seconds: float = 2.0,
-        max_wait_seconds: int = 300,
+        max_wait_seconds: int = DEFAULT_FILE_WAIT_SECONDS,
+        initial: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """轮询文件状态直到可用。"""
-        deadline = time.time() + max_wait_seconds
+        """轮询直到文件可被 Responses API 引用。
+
+        官方就绪状态是 ``active``（不是 processing）。上传响应若已是就绪态则不再轮询。
+        """
+        if initial and not initial.get("cached"):
+            ready = _file_status_or_raise(file_id, initial)
+            if ready is not None:
+                LOGGER.info("上传响应已就绪: %s -> %s", file_id, (initial.get("status") or "").lower())
+                return initial
+
+        deadline = time.time() + max(1, int(max_wait_seconds))
         url = f"{self.base_url}/files/{file_id}"
         last_status = "unknown"
+        interval = max(0.5, float(poll_interval_seconds))
         while time.time() < deadline:
             response = self.session.get(url, headers=self.headers, timeout=self.timeout_seconds)
             data = self._parse_response_json(response)
             status = (data.get("status") or "").lower()
             last_status = status or last_status
-            LOGGER.info("文件状态轮询: %s -> %s", file_id, status)
-            if status in {"processed", "succeeded", "completed", "ready"}:
+            LOGGER.info("文件状态轮询: %s -> %s", file_id, status or "(empty)")
+            ready = _file_status_or_raise(file_id, data)
+            if ready is not None:
                 return data
-            if status in {"failed", "error", "cancelled"}:
-                raise DoubaoApiError(f"文件处理失败：{file_id}，状态：{status}")
-            time.sleep(poll_interval_seconds)
-        raise DoubaoApiError(f"等待文件处理超时：{file_id}，最后状态：{last_status}")
+            if status and status not in FILE_PROCESSING_STATUSES:
+                LOGGER.warning("未识别的文件状态，继续等待: %s -> %s", file_id, status)
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                break
+            time.sleep(min(interval, remaining))
+            interval = min(interval * 1.5, 10.0)
+        raise DoubaoApiError(
+            f"等待文件处理超时：{file_id}，最后状态：{last_status}。"
+            "仅 processing/pending 等表示仍在抽帧；active 表示已可用。"
+            "若长期停留在 processing，请缩短视频、降低抽帧率，或改用 TOS 上传。"
+        )
 
     def create_response(
         self,
@@ -237,6 +266,21 @@ class DoubaoApiClient:
             elif event_type.endswith(".failed"):
                 raise DoubaoApiError(f"流式请求失败：{event}")
         return {"text": "".join(chunks).strip(), "usage": usage}
+
+
+def _file_status_or_raise(file_id: str, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """就绪返回 data；处理中返回 None；失败抛异常。"""
+    status = (data.get("status") or "").lower()
+    if status in FILE_READY_STATUSES:
+        return data
+    if status in FILE_FAILED_STATUSES:
+        error_obj = data.get("error") or {}
+        detail = ""
+        if isinstance(error_obj, dict):
+            detail = str(error_obj.get("message") or error_obj.get("code") or "").strip()
+        suffix = f"，详情：{detail}" if detail else ""
+        raise DoubaoApiError(f"文件处理失败：{file_id}，状态：{status}{suffix}")
+    return None
 
 
 def _flatten_form_data(prefix: str, value: Any) -> Dict[str, str]:
