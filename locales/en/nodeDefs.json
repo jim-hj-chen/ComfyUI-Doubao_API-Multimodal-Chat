@@ -24,7 +24,7 @@
       },
       "max_tokens": {
         "name": "Max Tokens",
-        "tooltip": "Maximum output tokens (1–4096)"
+        "tooltip": "Maximum output tokens (1–128000, i.e. 128k)"
       },
       "temperature": {
         "name": "Temperature",

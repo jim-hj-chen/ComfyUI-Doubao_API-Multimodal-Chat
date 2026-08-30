@@ -16,6 +16,7 @@ class DoubaoPromptSplitBatcher:
     FUNCTION = "split_prompts"
 
     MAX_PROMPTS = 1000
+    PREVIEW_CHARS = 60
 
     @classmethod
     def INPUT_TYPES(cls) -> Dict[str, Dict[str, tuple]]:
@@ -27,7 +28,7 @@ class DoubaoPromptSplitBatcher:
             }
         }
 
-    def split_prompts(self, input_text: str, delimiter: str, trim_each: bool) -> Tuple[List[str], int]:
+    def split_prompts(self, input_text: str, delimiter: str, trim_each: bool):
         normalized_delimiter = self._decode_escaped_delimiter(delimiter)
         source_text = input_text or ""
 
@@ -38,15 +39,29 @@ class DoubaoPromptSplitBatcher:
             parts = source_text.split(normalized_delimiter)
 
         prompts: List[str] = []
+        total_before_limit = 0
         for part in parts:
             value = part.strip() if trim_each else part
             if value != "":
-                prompts.append(value)
+                total_before_limit += 1
+                if len(prompts) < self.MAX_PROMPTS:
+                    prompts.append(value)
             # 保持与 UI 一致的上限，避免超大批次拖慢执行。
             if len(prompts) >= self.MAX_PROMPTS:
-                break
+                continue
 
-        return prompts, len(prompts)
+        count = len(prompts)
+        preview = [self._to_preview_text(text) for text in prompts]
+        limit_hit = total_before_limit > self.MAX_PROMPTS
+        return {
+            "ui": {
+                "split_preview": preview,
+                "split_full": prompts,
+                "split_count": [count],
+                "split_limit_hit": [limit_hit],
+            },
+            "result": (prompts, count),
+        }
 
     @staticmethod
     def _decode_escaped_delimiter(delimiter: str) -> str:
@@ -57,3 +72,9 @@ class DoubaoPromptSplitBatcher:
             return codecs.decode(raw, "unicode_escape")
         except Exception:
             return raw
+
+    @classmethod
+    def _to_preview_text(cls, text: str) -> str:
+        if len(text) <= cls.PREVIEW_CHARS:
+            return text
+        return f"{text[:cls.PREVIEW_CHARS]}..."

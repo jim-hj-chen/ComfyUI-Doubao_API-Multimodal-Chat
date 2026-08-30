@@ -37,7 +37,7 @@ pip install -r requirements.txt
 - `api_key`：豆包 API Key（密码输入）
 - `模型预设`：用于快速填充 `model_id`
 - `model_id`：最终生效模型 ID（运行时以此为准）
-- `max_tokens`：1-4096，默认 4096（最大输出 token）
+- `max_tokens`：1-128000（128k），默认 128000（最大输出 token）
 - `temperature`：0.0-2.0，默认 0.4（偏稳定，适合视频反推与长系统提示词）
 - `top_p`：0.0-1.0，默认 0.9
 

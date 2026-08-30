@@ -11,7 +11,7 @@ from ..utils.type_defs import ConfigType, FileType, ImageListType, VideoType
 
 
 LOGGER = logging.getLogger("comfyui_doubao.doubao_run_core")
-DEFAULT_TIMEOUT_SECONDS = 180
+DEFAULT_TIMEOUT_SECONDS = 600
 
 
 class DoubaoRunCore:

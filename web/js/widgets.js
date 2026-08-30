@@ -1700,10 +1700,9 @@ function installMediaWidget(node, options) {
 
 function installPromptSplitPreview(node) {
   injectStyles();
-  const inputWidget = findWidget(node, "input_text");
   const delimiterWidget = findWidget(node, "delimiter");
   const trimWidget = findWidget(node, "trim_each");
-  if (!inputWidget || !delimiterWidget || !trimWidget) return;
+  if (!delimiterWidget || !trimWidget) return;
 
   node._doubaoMinWidth = Math.max(Number(node._doubaoMinWidth) || 0, DOUBAO_PROMPT_SPLIT_MIN_WIDTH);
   node._doubaoMinHeight = Math.max(
@@ -1715,61 +1714,24 @@ function installPromptSplitPreview(node) {
   const container = document.createElement("div");
   container.className = "doubao-split-wrap";
 
-  const editor = document.createElement("div");
-  editor.className = "doubao-split-editor";
-  container.appendChild(editor);
-
-  const inputLabel = document.createElement("label");
-  inputLabel.className = "doubao-split-label";
-  editor.appendChild(inputLabel);
-
-  const textArea = document.createElement("textarea");
-  textArea.className = "doubao-split-textarea";
-  editor.appendChild(textArea);
-
-  const settingsRow = document.createElement("div");
-  settingsRow.className = "doubao-split-settings";
-  editor.appendChild(settingsRow);
-
-  const delimiterLabel = document.createElement("label");
-  delimiterLabel.className = "doubao-split-label";
-  settingsRow.appendChild(delimiterLabel);
-
-  const delimiterInput = document.createElement("input");
-  delimiterInput.type = "text";
-  delimiterInput.className = "doubao-split-delimiter";
-  settingsRow.appendChild(delimiterInput);
-
-  const checkboxWrap = document.createElement("label");
-  checkboxWrap.className = "doubao-split-checkbox-wrap";
-  settingsRow.appendChild(checkboxWrap);
-
-  const trimCheckbox = document.createElement("input");
-  trimCheckbox.type = "checkbox";
-  checkboxWrap.appendChild(trimCheckbox);
-
-  const trimLabel = document.createElement("span");
-  checkboxWrap.appendChild(trimLabel);
-
-  const previewWrap = document.createElement("div");
-  previewWrap.className = "doubao-split-preview";
-  container.appendChild(previewWrap);
-
   const title = document.createElement("div");
   title.className = "doubao-split-title";
-  previewWrap.appendChild(title);
+  container.appendChild(title);
 
   const summary = document.createElement("div");
   summary.className = "doubao-split-summary";
-  previewWrap.appendChild(summary);
+  container.appendChild(summary);
 
   const list = document.createElement("div");
   list.className = "doubao-split-list";
-  previewWrap.appendChild(list);
+  container.appendChild(list);
 
   const state = {
     expanded: new Set(),
-    signature: "",
+    previewPrompts: [],
+    fullPrompts: [],
+    count: 0,
+    limitHit: false,
   };
 
   const domWidget = node.addDOMWidget("split_preview", "doubao_split_preview", container, {
@@ -1829,25 +1791,18 @@ function installPromptSplitPreview(node) {
   }
 
   function renderPreview() {
-    const inputText = String(textArea.value || "");
-    const delimiter = String(delimiterInput.value || "");
-    const trimEach = Boolean(trimCheckbox.checked);
-    const splitResult = splitPromptText(inputText, delimiter, trimEach);
-    const prompts = splitResult.prompts;
     const labels = ui();
-
-    inputLabel.textContent = `${labels.inputText || "Input Text"}`;
-    delimiterLabel.textContent = `${labels.delimiter || "Delimiter"}`;
-    trimLabel.textContent = `${labels.trimWhitespace || "Trim Whitespace"}`;
+    const previewPrompts = state.previewPrompts;
+    const fullPrompts = state.fullPrompts;
     title.textContent = labels.splitPreview;
-    summary.classList.toggle("doubao-split-warning", splitResult.limitHit);
-    const baseText = labels.promptsTotal(prompts.length);
-    summary.textContent = splitResult.limitHit
+    summary.classList.toggle("doubao-split-warning", state.limitHit);
+    const baseText = labels.promptsTotal(state.count || fullPrompts.length || previewPrompts.length);
+    summary.textContent = state.limitHit
       ? `${baseText} · ${labels.splitLimitHit(DOUBAO_PROMPT_SPLIT_MAX_ITEMS)}`
       : baseText;
 
     list.innerHTML = "";
-    if (!prompts.length) {
+    if (!fullPrompts.length && !previewPrompts.length) {
       const empty = document.createElement("div");
       empty.className = "doubao-split-item";
       empty.textContent = "-";
@@ -1856,8 +1811,9 @@ function installPromptSplitPreview(node) {
       return;
     }
 
-    for (let index = 0; index < prompts.length; index += 1) {
-      const prompt = prompts[index];
+    const total = Math.max(fullPrompts.length, previewPrompts.length);
+    for (let index = 0; index < total; index += 1) {
+      const prompt = fullPrompts[index] ?? previewPrompts[index] ?? "";
       const expanded = state.expanded.has(index);
       const item = document.createElement("div");
       item.className = "doubao-split-item";
@@ -1882,80 +1838,46 @@ function installPromptSplitPreview(node) {
     node.setDirtyCanvas(true, true);
   }
 
-  function syncPreview(force = false) {
-    const widgetInput = String(inputWidget.value || "");
-    const widgetDelimiter = String(delimiterWidget.value || "");
-    const widgetTrim = Boolean(trimWidget.value);
-    if (textArea.value !== widgetInput) textArea.value = widgetInput;
-    if (delimiterInput.value !== widgetDelimiter) delimiterInput.value = widgetDelimiter;
-    if (trimCheckbox.checked !== widgetTrim) trimCheckbox.checked = widgetTrim;
-
-    const signature = JSON.stringify({
-      input: textArea.value || "",
-      delimiter: delimiterInput.value || "",
-      trim: Boolean(trimCheckbox.checked),
-    });
-    if (!force && state.signature === signature) return;
-    state.signature = signature;
+  function syncPreviewFromExecution(previewPrompts, fullPrompts, count, limitHit) {
+    state.previewPrompts = Array.isArray(previewPrompts)
+      ? previewPrompts.map((item) => String(item ?? ""))
+      : [];
+    state.fullPrompts = Array.isArray(fullPrompts) ? fullPrompts.map((item) => String(item ?? "")) : [];
+    state.count = Number.isFinite(Number(count))
+      ? Number(count)
+      : state.fullPrompts.length || state.previewPrompts.length;
+    state.limitHit = Boolean(limitHit);
     state.expanded.clear();
     renderPreview();
   }
 
-  const bindWidgetChange = (widget) => {
-    const originalCallback = widget.callback;
-    widget.callback = (value, ...args) => {
-      if (value !== undefined) {
-        widget.value = value;
-      }
-      syncPreview(true);
-      if (originalCallback) {
-        originalCallback.call(widget, value, ...args);
-      }
-    };
-  };
-  bindWidgetChange(inputWidget);
-  bindWidgetChange(delimiterWidget);
-  bindWidgetChange(trimWidget);
-
-  function syncWidgetsFromDom() {
-    inputWidget.value = textArea.value;
-    delimiterWidget.value = delimiterInput.value;
-    trimWidget.value = Boolean(trimCheckbox.checked);
-  }
-
-  textArea.addEventListener("input", () => {
-    syncWidgetsFromDom();
-    syncPreview(true);
-  });
-  delimiterInput.addEventListener("input", () => {
-    syncWidgetsFromDom();
-    syncPreview(true);
-  });
-  trimCheckbox.addEventListener("change", () => {
-    syncWidgetsFromDom();
-    syncPreview(true);
-  });
-
   const originalOnDrawForeground = node.onDrawForeground;
   node.onDrawForeground = function onDrawForegroundPreview() {
-    syncPreview(false);
+    renderPreview();
     if (originalOnDrawForeground) {
       return originalOnDrawForeground.apply(this, arguments);
     }
     return undefined;
   };
 
-  textArea.value = String(inputWidget.value || "");
-  delimiterInput.value = String(delimiterWidget.value || "---");
-  trimCheckbox.checked = Boolean(trimWidget.value);
-  toggleWidgetVisibility(inputWidget, false);
-  toggleWidgetVisibility(delimiterWidget, false);
-  toggleWidgetVisibility(trimWidget, false);
-  syncWidgetsFromDom();
-  syncPreview(true);
+  const originalOnExecuted = node.onExecuted;
+  node.onExecuted = function onExecutedPromptSplit(message) {
+    const previewPrompts = message?.split_preview || [];
+    const fullPrompts = message?.split_full || [];
+    const count = Array.isArray(message?.split_count) ? message.split_count[0] : fullPrompts.length;
+    const limitHit = Array.isArray(message?.split_limit_hit) ? message.split_limit_hit[0] : false;
+    syncPreviewFromExecution(previewPrompts, fullPrompts, count, limitHit);
+    if (originalOnExecuted) {
+      return originalOnExecuted.apply(this, arguments);
+    }
+    return undefined;
+  };
+
+  if (delimiterWidget) toggleWidgetVisibility(delimiterWidget, true);
+  if (trimWidget) toggleWidgetVisibility(trimWidget, true);
+  syncPreviewFromExecution([], [], 0, false);
   applyPreviewLayout();
   requestAnimationFrame(() => {
-    syncPreview(false);
     ensureNodeMinSize(node);
     applyPreviewLayout();
   });
@@ -2185,6 +2107,9 @@ app.registerExtension({
           minNodeWidth: DOUBAO_MEDIA_NODE_WIDTH,
           minNodeHeight: DOUBAO_MEDIA_NODE_HEIGHT,
         });
+      }
+      if (nodeData.name === "DoubaoPromptSplitBatcher") {
+        installPromptSplitPreview(this);
       }
       if (DOUBAO_NODE_NAMES.has(nodeData.name)) {
         installLabelSafeWidgets(this);

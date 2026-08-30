@@ -24,7 +24,7 @@
       },
       "max_tokens": {
         "name": "最大 Token 数",
-        "tooltip": "最大输出 token 数（1–4096）"
+        "tooltip": "最大输出 token 数（1–128000，即 128k）"
       },
       "temperature": {
         "name": "温度",
