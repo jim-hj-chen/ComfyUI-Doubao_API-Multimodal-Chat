@@ -185,7 +185,7 @@
     "inputs": {
       "input_text": {
         "name": "Input Text",
-        "tooltip": "Paste the raw text that contains multiple prompts."
+        "tooltip": "Required input port. Connect text from an upstream node."
       },
       "delimiter": {
         "name": "Delimiter",

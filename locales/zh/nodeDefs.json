@@ -185,7 +185,7 @@
     "inputs": {
       "input_text": {
         "name": "输入文本",
-        "tooltip": "粘贴包含多份提示词的原始文本。"
+        "tooltip": "必须连接上游文本节点输入。"
       },
       "delimiter": {
         "name": "分隔符",

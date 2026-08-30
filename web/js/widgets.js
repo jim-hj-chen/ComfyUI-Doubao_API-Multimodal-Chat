@@ -2186,10 +2186,6 @@ app.registerExtension({
           minNodeHeight: DOUBAO_MEDIA_NODE_HEIGHT,
         });
       }
-      if (nodeData.name === "DoubaoPromptSplitBatcher") {
-        installPromptSplitPreview(this);
-      }
-
       if (DOUBAO_NODE_NAMES.has(nodeData.name)) {
         installLabelSafeWidgets(this);
         ensureNodeMinSize(this);
