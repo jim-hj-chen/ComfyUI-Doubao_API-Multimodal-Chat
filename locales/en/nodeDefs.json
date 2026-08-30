@@ -178,5 +178,33 @@
         "tooltip": "Token usage as a JSON string"
       }
     }
+  },
+  "DoubaoPromptSplitBatcher": {
+    "display_name": "Doubao Prompt Split Batcher",
+    "description": "Split a long text containing multiple prompts by delimiter and output a list compatible with native ComfyUI batch execution.",
+    "inputs": {
+      "input_text": {
+        "name": "Input Text",
+        "tooltip": "Paste the raw text that contains multiple prompts."
+      },
+      "delimiter": {
+        "name": "Delimiter",
+        "tooltip": "Marker used to split prompts. Escape sequences are supported (e.g. \\n, \\n\\n)."
+      },
+      "trim_each": {
+        "name": "Trim Whitespace",
+        "tooltip": "When enabled, remove leading and trailing spaces/newlines from each split prompt."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Prompts",
+        "tooltip": "Split prompt list (executed item by item by ComfyUI batch mechanism)."
+      },
+      "1": {
+        "name": "Count",
+        "tooltip": "Number of valid prompts after splitting."
+      }
+    }
   }
 }

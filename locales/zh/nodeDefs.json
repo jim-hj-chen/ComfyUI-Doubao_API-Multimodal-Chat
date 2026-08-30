@@ -178,5 +178,33 @@
         "tooltip": "Token 统计 JSON 字符串"
       }
     }
+  },
+  "DoubaoPromptSplitBatcher": {
+    "display_name": "豆包提示词分割批处理器",
+    "description": "将包含多份提示词的长文本按分隔符切割，输出可直接用于批量执行的提示词列表。",
+    "inputs": {
+      "input_text": {
+        "name": "输入文本",
+        "tooltip": "粘贴包含多份提示词的原始文本。"
+      },
+      "delimiter": {
+        "name": "分隔符",
+        "tooltip": "用于切分提示词的标识，支持转义字符（如 \\n、\\n\\n）。"
+      },
+      "trim_each": {
+        "name": "去除首尾空白",
+        "tooltip": "启用后会移除每份提示词首尾的空格和换行符。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "提示词列表",
+        "tooltip": "分割后的提示词列表（按 ComfyUI 批处理机制逐条执行）。"
+      },
+      "1": {
+        "name": "分割数量",
+        "tooltip": "分割后有效提示词总数。"
+      }
+    }
   }
 }

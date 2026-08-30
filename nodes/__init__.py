@@ -6,6 +6,7 @@ from .image_upload import DoubaoImageUpload
 from .video_upload import DoubaoVideoUpload
 from .file_upload import DoubaoFileUpload
 from .doubao_run_core import DoubaoRunCore
+from .prompt_split_batcher import DoubaoPromptSplitBatcher
 
 NODE_CLASS_MAPPINGS = {
     "DoubaoModelConfig": DoubaoModelConfig,
@@ -14,6 +15,7 @@ NODE_CLASS_MAPPINGS = {
     "DoubaoVideoUpload": DoubaoVideoUpload,
     "DoubaoFileUpload": DoubaoFileUpload,
     "DoubaoRunCore": DoubaoRunCore,
+    "DoubaoPromptSplitBatcher": DoubaoPromptSplitBatcher,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -23,4 +25,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "DoubaoVideoUpload": "豆包视频上传",
     "DoubaoFileUpload": "豆包文件上传",
     "DoubaoRunCore": "豆包运行核心",
+    "DoubaoPromptSplitBatcher": "豆包提示词分割批处理器",
 }

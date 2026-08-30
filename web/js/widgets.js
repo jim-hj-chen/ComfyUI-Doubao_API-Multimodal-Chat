@@ -21,6 +21,11 @@ const DOUBAO_RUN_CORE_NODE_WIDTH = 440;
 const DOUBAO_RUN_CORE_NODE_HEIGHT = 300;
 const DOUBAO_RUN_CORE_MIN_WIDTH = 380;
 const DOUBAO_RUN_CORE_MIN_HEIGHT = 240;
+const DOUBAO_PROMPT_SPLIT_NODE_WIDTH = 600;
+const DOUBAO_PROMPT_SPLIT_NODE_HEIGHT = 550;
+const DOUBAO_PROMPT_SPLIT_MIN_WIDTH = 420;
+const DOUBAO_PROMPT_SPLIT_MIN_HEIGHT = 360;
+const DOUBAO_PROMPT_SPLIT_MAX_ITEMS = 1000;
 const DOUBAO_MEDIA_NODE_WIDTH =
   MEDIA_CARD_WIDTH * MEDIA_DEFAULT_COLUMNS +
   MEDIA_CARD_GAP * (MEDIA_DEFAULT_COLUMNS - 1) +
@@ -67,6 +72,12 @@ const UI_STRINGS = {
     fileName: "Name",
     fileType: "Type",
     fileSize: "Size",
+    inputText: "Input Text",
+    delimiter: "Delimiter",
+    trimWhitespace: "Trim Whitespace",
+    splitPreview: "Split Preview",
+    promptsTotal: (count) => `${count} prompts`,
+    splitLimitHit: (limit) => `Only the first ${limit} prompts are kept.`,
   },
   zh: {
     clear: "清空",
@@ -102,6 +113,12 @@ const UI_STRINGS = {
     fileName: "文件名",
     fileType: "类型",
     fileSize: "大小",
+    inputText: "输入文本",
+    delimiter: "分隔符",
+    trimWhitespace: "去除首尾空白",
+    splitPreview: "分割预览",
+    promptsTotal: (count) => `共 ${count} 份提示词`,
+    splitLimitHit: (limit) => `仅保留前 ${limit} 份提示词。`,
   },
 };
 
@@ -638,6 +655,133 @@ function injectStyles() {
       overflow: auto;
     }
     .doubao-modal-content img,.doubao-modal-content video { max-width: 88vw; max-height: 80vh; display: block; }
+    .doubao-split-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      width: 100%;
+      height: 100%;
+      min-width: 0;
+      min-height: 0;
+      box-sizing: border-box;
+      overflow: hidden;
+      padding-top: 4px;
+    }
+    .doubao-split-editor {
+      flex: 1 1 auto;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .doubao-split-label {
+      font-size: 12px;
+      color: #d8dee9;
+      line-height: 1.3;
+    }
+    .doubao-split-textarea {
+      flex: 1 1 auto;
+      min-height: 120px;
+      width: 100%;
+      resize: none;
+      border: 1px solid #4c566a;
+      border-radius: 6px;
+      background: #1f2430;
+      color: #eceff4;
+      padding: 8px;
+      box-sizing: border-box;
+      overflow: auto;
+      font-size: 12px;
+      line-height: 1.5;
+      font-family: inherit;
+    }
+    .doubao-split-settings {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+      flex-wrap: wrap;
+    }
+    .doubao-split-delimiter {
+      flex: 1 1 200px;
+      min-width: 140px;
+      border: 1px solid #4c566a;
+      border-radius: 6px;
+      background: #1f2430;
+      color: #eceff4;
+      padding: 6px 8px;
+      box-sizing: border-box;
+      font-size: 12px;
+      line-height: 1.3;
+    }
+    .doubao-split-checkbox-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: #d8dee9;
+      font-size: 12px;
+      line-height: 1.3;
+      user-select: none;
+    }
+    .doubao-split-preview {
+      flex: 1 1 auto;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .doubao-split-title {
+      flex: 0 0 auto;
+      font-size: 12px;
+      color: #d8dee9;
+      font-weight: 600;
+      line-height: 1.4;
+    }
+    .doubao-split-summary {
+      flex: 0 0 auto;
+      font-size: 11px;
+      color: #b8c0cc;
+      line-height: 1.35;
+    }
+    .doubao-split-warning {
+      color: #f6c177;
+    }
+    .doubao-split-list {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      border: 1px solid #4c566a;
+      border-radius: 6px;
+      background: #1f2430;
+      padding: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .doubao-split-item {
+      border: 1px solid #3f485a;
+      border-radius: 6px;
+      padding: 6px 8px;
+      font-size: 12px;
+      line-height: 1.45;
+      color: #e5e9f0;
+      background: #252b38;
+      cursor: pointer;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .doubao-split-item:hover {
+      border-color: #6784b3;
+    }
+    .doubao-split-item-head {
+      color: #9fb0cc;
+      margin-bottom: 4px;
+      font-size: 11px;
+    }
+    .doubao-split-item-body {
+      margin: 0;
+    }
   `;
   document.head.appendChild(style);
 }
@@ -647,6 +791,39 @@ function parseMultiline(raw) {
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
+}
+
+function decodeEscapedText(raw) {
+  const source = String(raw || "");
+  const placeholder = "\u0000";
+  const preserved = source.replace(/\\\\/g, placeholder);
+  return preserved
+    .replace(/\\n/g, "\n")
+    .replace(/\\r/g, "\r")
+    .replace(/\\t/g, "\t")
+    .replace(/\\f/g, "\f")
+    .replace(/\\v/g, "\v")
+    .replace(new RegExp(placeholder, "g"), "\\");
+}
+
+function splitPromptText(inputText, delimiter, trimEach) {
+  const text = String(inputText || "");
+  const decodedDelimiter = decodeEscapedText(delimiter);
+  const chunks = decodedDelimiter ? text.split(decodedDelimiter) : [text];
+  const prompts = [];
+
+  for (const chunk of chunks) {
+    const value = trimEach ? chunk.trim() : chunk;
+    if (!value) continue;
+    prompts.push(value);
+  }
+
+  const limited = prompts.slice(0, DOUBAO_PROMPT_SPLIT_MAX_ITEMS);
+  return {
+    prompts: limited,
+    totalBeforeLimit: prompts.length,
+    limitHit: prompts.length > DOUBAO_PROMPT_SPLIT_MAX_ITEMS,
+  };
 }
 
 function filenameFromPath(path) {
@@ -879,6 +1056,33 @@ function installMediaNodeSizeDefaults(nodeType) {
   };
 }
 
+function installPromptSplitNodeSizeDefaults(nodeType) {
+  nodeType.prototype._doubaoMinWidth = DOUBAO_PROMPT_SPLIT_MIN_WIDTH;
+  nodeType.prototype._doubaoMinHeight = DOUBAO_PROMPT_SPLIT_MIN_HEIGHT;
+  if (!Array.isArray(nodeType.size) || nodeType.size[0] < DOUBAO_PROMPT_SPLIT_NODE_WIDTH) {
+    nodeType.size = [DOUBAO_PROMPT_SPLIT_NODE_WIDTH, DOUBAO_PROMPT_SPLIT_NODE_HEIGHT];
+  }
+  if (nodeType.prototype._doubaoSplitComputeSizeGuard) return;
+  nodeType.prototype._doubaoSplitComputeSizeGuard = true;
+  const originalComputeSize = nodeType.prototype.computeSize;
+  nodeType.prototype.computeSize = function doubaoSplitComputeSize(out) {
+    const size = originalComputeSize
+      ? originalComputeSize.apply(this, arguments)
+      : [DOUBAO_PROMPT_SPLIT_NODE_WIDTH, DOUBAO_PROMPT_SPLIT_NODE_HEIGHT];
+    const minWidth = Number(this._doubaoMinWidth) || DOUBAO_PROMPT_SPLIT_MIN_WIDTH;
+    const minHeight = Number(this._doubaoMinHeight) || DOUBAO_PROMPT_SPLIT_MIN_HEIGHT;
+    if (Array.isArray(size) && size.length >= 2) {
+      size[0] = Math.max(Number(size[0]) || 0, minWidth);
+      size[1] = Math.max(Number(size[1]) || 0, minHeight);
+    }
+    if (Array.isArray(out) && out.length >= 2 && Array.isArray(size)) {
+      out[0] = size[0];
+      out[1] = size[1];
+    }
+    return size;
+  };
+}
+
 const DOUBAO_NODE_NAMES = new Set([
   "DoubaoModelConfig",
   "DoubaoTextInput",
@@ -886,6 +1090,7 @@ const DOUBAO_NODE_NAMES = new Set([
   "DoubaoVideoUpload",
   "DoubaoFileUpload",
   "DoubaoRunCore",
+  "DoubaoPromptSplitBatcher",
 ]);
 
 function getNodeMinWidth(node) {
@@ -1493,6 +1698,269 @@ function installMediaWidget(node, options) {
   };
 }
 
+function installPromptSplitPreview(node) {
+  injectStyles();
+  const inputWidget = findWidget(node, "input_text");
+  const delimiterWidget = findWidget(node, "delimiter");
+  const trimWidget = findWidget(node, "trim_each");
+  if (!inputWidget || !delimiterWidget || !trimWidget) return;
+
+  node._doubaoMinWidth = Math.max(Number(node._doubaoMinWidth) || 0, DOUBAO_PROMPT_SPLIT_MIN_WIDTH);
+  node._doubaoMinHeight = Math.max(
+    Number(node._doubaoMinHeight) || 0,
+    DOUBAO_PROMPT_SPLIT_MIN_HEIGHT
+  );
+  ensureNodeMinSize(node);
+
+  const container = document.createElement("div");
+  container.className = "doubao-split-wrap";
+
+  const editor = document.createElement("div");
+  editor.className = "doubao-split-editor";
+  container.appendChild(editor);
+
+  const inputLabel = document.createElement("label");
+  inputLabel.className = "doubao-split-label";
+  editor.appendChild(inputLabel);
+
+  const textArea = document.createElement("textarea");
+  textArea.className = "doubao-split-textarea";
+  editor.appendChild(textArea);
+
+  const settingsRow = document.createElement("div");
+  settingsRow.className = "doubao-split-settings";
+  editor.appendChild(settingsRow);
+
+  const delimiterLabel = document.createElement("label");
+  delimiterLabel.className = "doubao-split-label";
+  settingsRow.appendChild(delimiterLabel);
+
+  const delimiterInput = document.createElement("input");
+  delimiterInput.type = "text";
+  delimiterInput.className = "doubao-split-delimiter";
+  settingsRow.appendChild(delimiterInput);
+
+  const checkboxWrap = document.createElement("label");
+  checkboxWrap.className = "doubao-split-checkbox-wrap";
+  settingsRow.appendChild(checkboxWrap);
+
+  const trimCheckbox = document.createElement("input");
+  trimCheckbox.type = "checkbox";
+  checkboxWrap.appendChild(trimCheckbox);
+
+  const trimLabel = document.createElement("span");
+  checkboxWrap.appendChild(trimLabel);
+
+  const previewWrap = document.createElement("div");
+  previewWrap.className = "doubao-split-preview";
+  container.appendChild(previewWrap);
+
+  const title = document.createElement("div");
+  title.className = "doubao-split-title";
+  previewWrap.appendChild(title);
+
+  const summary = document.createElement("div");
+  summary.className = "doubao-split-summary";
+  previewWrap.appendChild(summary);
+
+  const list = document.createElement("div");
+  list.className = "doubao-split-list";
+  previewWrap.appendChild(list);
+
+  const state = {
+    expanded: new Set(),
+    signature: "",
+  };
+
+  const domWidget = node.addDOMWidget("split_preview", "doubao_split_preview", container, {
+    serialize: false,
+    hideOnZoom: false,
+  });
+
+  function measureOtherWidgetsHeight() {
+    let height = 0;
+    for (const widget of node.widgets || []) {
+      if (widget === domWidget) continue;
+      const size = widget.computeSize ? widget.computeSize(node.size?.[0] || 280) : [0, 24];
+      const widgetHeight = Array.isArray(size) ? size[1] : 24;
+      if (widget.hidden || widgetHeight <= 0) continue;
+      height += widgetHeight + 4;
+    }
+    return height;
+  }
+
+  function computeWidgetSize(width) {
+    const minWidth = getNodeMinWidth(node);
+    const nodeWidth = node.size?.[0] ?? width ?? minWidth;
+    const widgetWidth = Math.max(180, Math.min(nodeWidth, width ?? nodeWidth) - NODE_SIDE_PADDING);
+    const otherHeight = measureOtherWidgetsHeight();
+    const nodeHeight = node.size?.[1] ?? DOUBAO_PROMPT_SPLIT_NODE_HEIGHT;
+    const available = nodeHeight - NODE_TITLE_HEIGHT - otherHeight - NODE_BOTTOM_PADDING;
+    const minPreview = Math.max(180, Math.floor(nodeHeight * 0.5) - 10);
+    return [widgetWidth, Math.max(minPreview, available)];
+  }
+
+  function applyPreviewLayout() {
+    ensureNodeMinSize(node);
+    const nodeWidth = node.size?.[0] ?? getNodeMinWidth(node);
+    const innerWidth = Math.max(0, nodeWidth - NODE_SIDE_PADDING);
+    const [, height] = computeWidgetSize(nodeWidth);
+    applyHostWidth(container, innerWidth);
+    container.style.height = `${height}px`;
+    if (domWidget.element && domWidget.element !== container) {
+      applyHostWidth(domWidget.element, innerWidth);
+      domWidget.element.style.height = `${height}px`;
+    }
+  }
+
+  domWidget.computeSize = (width) => computeWidgetSize(width);
+
+  const originalOnResize = node.onResize;
+  node.onResize = function onResize(size) {
+    if (originalOnResize) {
+      originalOnResize.apply(this, arguments);
+    }
+    applyPreviewLayout(size);
+  };
+
+  function excerpt(text, maxLen = 60) {
+    if (text.length <= maxLen) return text;
+    return `${text.slice(0, maxLen)}...`;
+  }
+
+  function renderPreview() {
+    const inputText = String(textArea.value || "");
+    const delimiter = String(delimiterInput.value || "");
+    const trimEach = Boolean(trimCheckbox.checked);
+    const splitResult = splitPromptText(inputText, delimiter, trimEach);
+    const prompts = splitResult.prompts;
+    const labels = ui();
+
+    inputLabel.textContent = `${labels.inputText || "Input Text"}`;
+    delimiterLabel.textContent = `${labels.delimiter || "Delimiter"}`;
+    trimLabel.textContent = `${labels.trimWhitespace || "Trim Whitespace"}`;
+    title.textContent = labels.splitPreview;
+    summary.classList.toggle("doubao-split-warning", splitResult.limitHit);
+    const baseText = labels.promptsTotal(prompts.length);
+    summary.textContent = splitResult.limitHit
+      ? `${baseText} · ${labels.splitLimitHit(DOUBAO_PROMPT_SPLIT_MAX_ITEMS)}`
+      : baseText;
+
+    list.innerHTML = "";
+    if (!prompts.length) {
+      const empty = document.createElement("div");
+      empty.className = "doubao-split-item";
+      empty.textContent = "-";
+      list.appendChild(empty);
+      node.setDirtyCanvas(true, true);
+      return;
+    }
+
+    for (let index = 0; index < prompts.length; index += 1) {
+      const prompt = prompts[index];
+      const expanded = state.expanded.has(index);
+      const item = document.createElement("div");
+      item.className = "doubao-split-item";
+
+      const head = document.createElement("div");
+      head.className = "doubao-split-item-head";
+      head.textContent = `#${index + 1}`;
+      item.appendChild(head);
+
+      const body = document.createElement("div");
+      body.className = "doubao-split-item-body";
+      body.textContent = expanded ? prompt : excerpt(prompt, 60);
+      item.appendChild(body);
+
+      item.addEventListener("click", () => {
+        if (state.expanded.has(index)) state.expanded.delete(index);
+        else state.expanded.add(index);
+        renderPreview();
+      });
+      list.appendChild(item);
+    }
+    node.setDirtyCanvas(true, true);
+  }
+
+  function syncPreview(force = false) {
+    const widgetInput = String(inputWidget.value || "");
+    const widgetDelimiter = String(delimiterWidget.value || "");
+    const widgetTrim = Boolean(trimWidget.value);
+    if (textArea.value !== widgetInput) textArea.value = widgetInput;
+    if (delimiterInput.value !== widgetDelimiter) delimiterInput.value = widgetDelimiter;
+    if (trimCheckbox.checked !== widgetTrim) trimCheckbox.checked = widgetTrim;
+
+    const signature = JSON.stringify({
+      input: textArea.value || "",
+      delimiter: delimiterInput.value || "",
+      trim: Boolean(trimCheckbox.checked),
+    });
+    if (!force && state.signature === signature) return;
+    state.signature = signature;
+    state.expanded.clear();
+    renderPreview();
+  }
+
+  const bindWidgetChange = (widget) => {
+    const originalCallback = widget.callback;
+    widget.callback = (value, ...args) => {
+      if (value !== undefined) {
+        widget.value = value;
+      }
+      syncPreview(true);
+      if (originalCallback) {
+        originalCallback.call(widget, value, ...args);
+      }
+    };
+  };
+  bindWidgetChange(inputWidget);
+  bindWidgetChange(delimiterWidget);
+  bindWidgetChange(trimWidget);
+
+  function syncWidgetsFromDom() {
+    inputWidget.value = textArea.value;
+    delimiterWidget.value = delimiterInput.value;
+    trimWidget.value = Boolean(trimCheckbox.checked);
+  }
+
+  textArea.addEventListener("input", () => {
+    syncWidgetsFromDom();
+    syncPreview(true);
+  });
+  delimiterInput.addEventListener("input", () => {
+    syncWidgetsFromDom();
+    syncPreview(true);
+  });
+  trimCheckbox.addEventListener("change", () => {
+    syncWidgetsFromDom();
+    syncPreview(true);
+  });
+
+  const originalOnDrawForeground = node.onDrawForeground;
+  node.onDrawForeground = function onDrawForegroundPreview() {
+    syncPreview(false);
+    if (originalOnDrawForeground) {
+      return originalOnDrawForeground.apply(this, arguments);
+    }
+    return undefined;
+  };
+
+  textArea.value = String(inputWidget.value || "");
+  delimiterInput.value = String(delimiterWidget.value || "---");
+  trimCheckbox.checked = Boolean(trimWidget.value);
+  toggleWidgetVisibility(inputWidget, false);
+  toggleWidgetVisibility(delimiterWidget, false);
+  toggleWidgetVisibility(trimWidget, false);
+  syncWidgetsFromDom();
+  syncPreview(true);
+  applyPreviewLayout();
+  requestAnimationFrame(() => {
+    syncPreview(false);
+    ensureNodeMinSize(node);
+    applyPreviewLayout();
+  });
+}
+
 function isKnownVideoMode(value) {
   return value === VIDEO_MODE_LOCAL || value === VIDEO_MODE_TOS_BUCKET || value === VIDEO_MODE_TOS_URL;
 }
@@ -1643,6 +2111,9 @@ app.registerExtension({
     if (["DoubaoImageUpload", "DoubaoVideoUpload", "DoubaoFileUpload"].includes(nodeData.name)) {
       installMediaNodeSizeDefaults(nodeType);
     }
+    if (nodeData.name === "DoubaoPromptSplitBatcher") {
+      installPromptSplitNodeSizeDefaults(nodeType);
+    }
 
     if (nodeData.name === "DoubaoVideoUpload") {
       const originalOnConfigure = nodeType.prototype.onConfigure;
@@ -1714,6 +2185,9 @@ app.registerExtension({
           minNodeWidth: DOUBAO_MEDIA_NODE_WIDTH,
           minNodeHeight: DOUBAO_MEDIA_NODE_HEIGHT,
         });
+      }
+      if (nodeData.name === "DoubaoPromptSplitBatcher") {
+        installPromptSplitPreview(this);
       }
 
       if (DOUBAO_NODE_NAMES.has(nodeData.name)) {
