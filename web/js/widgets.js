@@ -26,6 +26,18 @@ const DOUBAO_PROMPT_SPLIT_NODE_HEIGHT = 550;
 const DOUBAO_PROMPT_SPLIT_MIN_WIDTH = 420;
 const DOUBAO_PROMPT_SPLIT_MIN_HEIGHT = 360;
 const DOUBAO_PROMPT_SPLIT_MAX_ITEMS = 1000;
+const DOUBAO_SPLIT_PREVIEW_ITEM_HEIGHT = 40;
+const DOUBAO_SPLIT_PREVIEW_VISIBLE_COUNT = 5;
+const DOUBAO_SPLIT_PREVIEW_LIST_GAP = 6;
+const DOUBAO_SPLIT_PREVIEW_LIST_PADDING = 12;
+const DOUBAO_SPLIT_PREVIEW_LIST_HEIGHT =
+  DOUBAO_SPLIT_PREVIEW_ITEM_HEIGHT * DOUBAO_SPLIT_PREVIEW_VISIBLE_COUNT +
+  DOUBAO_SPLIT_PREVIEW_LIST_GAP * (DOUBAO_SPLIT_PREVIEW_VISIBLE_COUNT - 1) +
+  DOUBAO_SPLIT_PREVIEW_LIST_PADDING;
+const DOUBAO_SPLIT_PREVIEW_HEADER_HEIGHT = 52;
+const DOUBAO_SPLIT_PREVIEW_WIDGET_HEIGHT =
+  DOUBAO_SPLIT_PREVIEW_HEADER_HEIGHT + DOUBAO_SPLIT_PREVIEW_LIST_HEIGHT + 8;
+const DOUBAO_SPLIT_INDEX_WIDTH_CH = 4;
 const DOUBAO_MEDIA_NODE_WIDTH =
   MEDIA_CARD_WIDTH * MEDIA_DEFAULT_COLUMNS +
   MEDIA_CARD_GAP * (MEDIA_DEFAULT_COLUMNS - 1) +
@@ -660,9 +672,8 @@ function injectStyles() {
       flex-direction: column;
       gap: 8px;
       width: 100%;
-      height: 100%;
+      flex: 0 0 auto;
       min-width: 0;
-      min-height: 0;
       box-sizing: border-box;
       overflow: hidden;
       padding-top: 4px;
@@ -748,8 +759,8 @@ function injectStyles() {
       color: #f6c177;
     }
     .doubao-split-list {
-      flex: 1 1 auto;
-      min-height: 0;
+      flex: 0 0 auto;
+      overflow-x: hidden;
       overflow-y: auto;
       border: 1px solid #4c566a;
       border-radius: 6px;
@@ -758,29 +769,65 @@ function injectStyles() {
       display: flex;
       flex-direction: column;
       gap: 6px;
+      box-sizing: border-box;
     }
     .doubao-split-item {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 8px;
+      box-sizing: border-box;
+      min-height: 40px;
+      max-height: 40px;
       border: 1px solid #3f485a;
       border-radius: 6px;
-      padding: 6px 8px;
+      padding: 4px 8px;
       font-size: 12px;
-      line-height: 1.45;
+      line-height: 1.35;
       color: #e5e9f0;
       background: #252b38;
       cursor: pointer;
-      white-space: pre-wrap;
-      overflow-wrap: anywhere;
+      overflow: hidden;
     }
     .doubao-split-item:hover {
       border-color: #6784b3;
     }
-    .doubao-split-item-head {
+    .doubao-split-item-index {
+      flex: 0 0 auto;
+      width: 4ch;
+      min-width: 4ch;
+      max-width: 4ch;
+      text-align: right;
       color: #9fb0cc;
-      margin-bottom: 4px;
       font-size: 11px;
+      font-variant-numeric: tabular-nums;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      user-select: none;
     }
     .doubao-split-item-body {
+      flex: 1 1 auto;
+      min-width: 0;
       margin: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .doubao-split-modal-text {
+      width: min(640px, 82vw);
+      height: min(420px, 60vh);
+      resize: none;
+      border: 1px solid #4c566a;
+      border-radius: 6px;
+      background: #1f2430;
+      color: #eceff4;
+      padding: 10px 12px;
+      box-sizing: border-box;
+      font-size: 13px;
+      line-height: 1.55;
+      font-family: inherit;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
     }
   `;
   document.head.appendChild(style);
@@ -987,6 +1034,27 @@ function showModal(contentNode) {
   document.body.appendChild(modal);
 }
 
+function showPromptDetailModal(index, text) {
+  const labels = ui();
+  const wrapper = document.createElement("div");
+  wrapper.style.display = "flex";
+  wrapper.style.flexDirection = "column";
+  wrapper.style.gap = "8px";
+
+  const title = document.createElement("div");
+  title.style.fontWeight = "600";
+  title.textContent = `${labels.splitPreview} #${index + 1}`;
+
+  const textarea = document.createElement("textarea");
+  textarea.className = "doubao-split-modal-text";
+  textarea.readOnly = true;
+  textarea.value = text;
+
+  wrapper.appendChild(title);
+  wrapper.appendChild(textarea);
+  showModal(wrapper);
+}
+
 function extraVideoWidgetRows(node) {
   return ["TOS视频URL", "TOS_Bucket", "TOS_Prefix"].filter((name) => {
     const widget = findWidget(node, name);
@@ -1059,6 +1127,7 @@ function installMediaNodeSizeDefaults(nodeType) {
 function installPromptSplitNodeSizeDefaults(nodeType) {
   nodeType.prototype._doubaoMinWidth = DOUBAO_PROMPT_SPLIT_MIN_WIDTH;
   nodeType.prototype._doubaoMinHeight = DOUBAO_PROMPT_SPLIT_MIN_HEIGHT;
+  nodeType.prototype._doubaoMaxHeight = DOUBAO_PROMPT_SPLIT_NODE_HEIGHT;
   if (!Array.isArray(nodeType.size) || nodeType.size[0] < DOUBAO_PROMPT_SPLIT_NODE_WIDTH) {
     nodeType.size = [DOUBAO_PROMPT_SPLIT_NODE_WIDTH, DOUBAO_PROMPT_SPLIT_NODE_HEIGHT];
   }
@@ -1071,9 +1140,10 @@ function installPromptSplitNodeSizeDefaults(nodeType) {
       : [DOUBAO_PROMPT_SPLIT_NODE_WIDTH, DOUBAO_PROMPT_SPLIT_NODE_HEIGHT];
     const minWidth = Number(this._doubaoMinWidth) || DOUBAO_PROMPT_SPLIT_MIN_WIDTH;
     const minHeight = Number(this._doubaoMinHeight) || DOUBAO_PROMPT_SPLIT_MIN_HEIGHT;
+    const maxHeight = Number(this._doubaoMaxHeight) || DOUBAO_PROMPT_SPLIT_NODE_HEIGHT;
     if (Array.isArray(size) && size.length >= 2) {
       size[0] = Math.max(Number(size[0]) || 0, minWidth);
-      size[1] = Math.max(Number(size[1]) || 0, minHeight);
+      size[1] = Math.min(Math.max(Number(size[1]) || 0, minHeight), maxHeight);
     }
     if (Array.isArray(out) && out.length >= 2 && Array.isArray(size)) {
       out[0] = size[0];
@@ -1709,6 +1779,7 @@ function installPromptSplitPreview(node) {
     Number(node._doubaoMinHeight) || 0,
     DOUBAO_PROMPT_SPLIT_MIN_HEIGHT
   );
+  node._doubaoMaxHeight = DOUBAO_PROMPT_SPLIT_NODE_HEIGHT;
   ensureNodeMinSize(node);
 
   const container = document.createElement("div");
@@ -1724,10 +1795,11 @@ function installPromptSplitPreview(node) {
 
   const list = document.createElement("div");
   list.className = "doubao-split-list";
+  list.style.height = `${DOUBAO_SPLIT_PREVIEW_LIST_HEIGHT}px`;
+  list.style.maxHeight = `${DOUBAO_SPLIT_PREVIEW_LIST_HEIGHT}px`;
   container.appendChild(list);
 
   const state = {
-    expanded: new Set(),
     previewPrompts: [],
     fullPrompts: [],
     count: 0,
@@ -1739,39 +1811,24 @@ function installPromptSplitPreview(node) {
     hideOnZoom: false,
   });
 
-  function measureOtherWidgetsHeight() {
-    let height = 0;
-    for (const widget of node.widgets || []) {
-      if (widget === domWidget) continue;
-      const size = widget.computeSize ? widget.computeSize(node.size?.[0] || 280) : [0, 24];
-      const widgetHeight = Array.isArray(size) ? size[1] : 24;
-      if (widget.hidden || widgetHeight <= 0) continue;
-      height += widgetHeight + 4;
-    }
-    return height;
-  }
-
   function computeWidgetSize(width) {
-    const minWidth = getNodeMinWidth(node);
-    const nodeWidth = node.size?.[0] ?? width ?? minWidth;
+    const nodeWidth = node.size?.[0] ?? width ?? DOUBAO_PROMPT_SPLIT_NODE_WIDTH;
     const widgetWidth = Math.max(180, Math.min(nodeWidth, width ?? nodeWidth) - NODE_SIDE_PADDING);
-    const otherHeight = measureOtherWidgetsHeight();
-    const nodeHeight = node.size?.[1] ?? DOUBAO_PROMPT_SPLIT_NODE_HEIGHT;
-    const available = nodeHeight - NODE_TITLE_HEIGHT - otherHeight - NODE_BOTTOM_PADDING;
-    const minPreview = Math.max(180, Math.floor(nodeHeight * 0.5) - 10);
-    return [widgetWidth, Math.max(minPreview, available)];
+    return [widgetWidth, DOUBAO_SPLIT_PREVIEW_WIDGET_HEIGHT];
   }
 
   function applyPreviewLayout() {
     ensureNodeMinSize(node);
     const nodeWidth = node.size?.[0] ?? getNodeMinWidth(node);
     const innerWidth = Math.max(0, nodeWidth - NODE_SIDE_PADDING);
-    const [, height] = computeWidgetSize(nodeWidth);
+    const fixedHeight = DOUBAO_SPLIT_PREVIEW_WIDGET_HEIGHT;
     applyHostWidth(container, innerWidth);
-    container.style.height = `${height}px`;
+    container.style.height = `${fixedHeight}px`;
+    container.style.maxHeight = `${fixedHeight}px`;
     if (domWidget.element && domWidget.element !== container) {
       applyHostWidth(domWidget.element, innerWidth);
-      domWidget.element.style.height = `${height}px`;
+      domWidget.element.style.height = `${fixedHeight}px`;
+      domWidget.element.style.maxHeight = `${fixedHeight}px`;
     }
   }
 
@@ -1790,6 +1847,10 @@ function installPromptSplitPreview(node) {
     return `${text.slice(0, maxLen)}...`;
   }
 
+  function formatIndexLabel(index) {
+    return String(index + 1).padStart(DOUBAO_SPLIT_INDEX_WIDTH_CH, " ");
+  }
+
   function renderPreview() {
     const labels = ui();
     const previewPrompts = state.previewPrompts;
@@ -1805,37 +1866,45 @@ function installPromptSplitPreview(node) {
     if (!fullPrompts.length && !previewPrompts.length) {
       const empty = document.createElement("div");
       empty.className = "doubao-split-item";
-      empty.textContent = "-";
+      empty.style.cursor = "default";
+
+      const emptyIndex = document.createElement("div");
+      emptyIndex.className = "doubao-split-item-index";
+      emptyIndex.textContent = formatIndexLabel(0).trim() || "-";
+      empty.appendChild(emptyIndex);
+
+      const emptyBody = document.createElement("div");
+      emptyBody.className = "doubao-split-item-body";
+      emptyBody.textContent = "-";
+      empty.appendChild(emptyBody);
+
       list.appendChild(empty);
-      node.setDirtyCanvas(true, true);
       return;
     }
 
     const total = Math.max(fullPrompts.length, previewPrompts.length);
     for (let index = 0; index < total; index += 1) {
-      const prompt = fullPrompts[index] ?? previewPrompts[index] ?? "";
-      const expanded = state.expanded.has(index);
+      const fullText = fullPrompts[index] ?? previewPrompts[index] ?? "";
+      const summaryText = previewPrompts[index] ?? excerpt(fullText, 60);
       const item = document.createElement("div");
       item.className = "doubao-split-item";
 
-      const head = document.createElement("div");
-      head.className = "doubao-split-item-head";
-      head.textContent = `#${index + 1}`;
-      item.appendChild(head);
+      const indexEl = document.createElement("div");
+      indexEl.className = "doubao-split-item-index";
+      indexEl.textContent = formatIndexLabel(index);
+      item.appendChild(indexEl);
 
       const body = document.createElement("div");
       body.className = "doubao-split-item-body";
-      body.textContent = expanded ? prompt : excerpt(prompt, 60);
+      body.textContent = summaryText;
       item.appendChild(body);
 
-      item.addEventListener("click", () => {
-        if (state.expanded.has(index)) state.expanded.delete(index);
-        else state.expanded.add(index);
-        renderPreview();
+      item.addEventListener("click", (event) => {
+        event.stopPropagation();
+        showPromptDetailModal(index, fullText);
       });
       list.appendChild(item);
     }
-    node.setDirtyCanvas(true, true);
   }
 
   function syncPreviewFromExecution(previewPrompts, fullPrompts, count, limitHit) {
@@ -1847,18 +1916,8 @@ function installPromptSplitPreview(node) {
       ? Number(count)
       : state.fullPrompts.length || state.previewPrompts.length;
     state.limitHit = Boolean(limitHit);
-    state.expanded.clear();
     renderPreview();
   }
-
-  const originalOnDrawForeground = node.onDrawForeground;
-  node.onDrawForeground = function onDrawForegroundPreview() {
-    renderPreview();
-    if (originalOnDrawForeground) {
-      return originalOnDrawForeground.apply(this, arguments);
-    }
-    return undefined;
-  };
 
   const originalOnExecuted = node.onExecuted;
   node.onExecuted = function onExecutedPromptSplit(message) {
@@ -1873,8 +1932,6 @@ function installPromptSplitPreview(node) {
     return undefined;
   };
 
-  if (delimiterWidget) toggleWidgetVisibility(delimiterWidget, true);
-  if (trimWidget) toggleWidgetVisibility(trimWidget, true);
   syncPreviewFromExecution([], [], 0, false);
   applyPreviewLayout();
   requestAnimationFrame(() => {
