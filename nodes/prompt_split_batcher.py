@@ -9,7 +9,7 @@ from typing import Dict, List, Tuple
 class DoubaoPromptSplitBatcher:
     """将长文本按分隔符切分为提示词列表，输出给 ComfyUI 批处理机制。"""
 
-    CATEGORY = "Doubao API"
+    CATEGORY = "Doubao API/Tools"
     RETURN_TYPES = ("STRING", "INT")
     RETURN_NAMES = ("prompts", "count")
     OUTPUT_IS_LIST = (True, False)

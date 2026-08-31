@@ -78,6 +78,62 @@
       }
     }
   },
+  "DoubaoImageListToImage": {
+    "display_name": "Image List to Image (9 Outputs)",
+    "description": "Split an IMAGE_LIST into 9 standard IMAGE outputs, filling missing slots with placeholders.",
+    "inputs": {
+      "images": {
+        "name": "Image List",
+        "tooltip": "Connect the IMAGE_LIST output from DoubaoImageUpload."
+      },
+      "default_width": {
+        "name": "Default Width",
+        "tooltip": "Placeholder width when fewer than 9 images are available (default: 512)."
+      },
+      "default_height": {
+        "name": "Default Height",
+        "tooltip": "Placeholder height when fewer than 9 images are available (default: 512)."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "image_1",
+        "tooltip": "Standard IMAGE output #1."
+      },
+      "1": {
+        "name": "image_2",
+        "tooltip": "Standard IMAGE output #2."
+      },
+      "2": {
+        "name": "image_3",
+        "tooltip": "Standard IMAGE output #3."
+      },
+      "3": {
+        "name": "image_4",
+        "tooltip": "Standard IMAGE output #4."
+      },
+      "4": {
+        "name": "image_5",
+        "tooltip": "Standard IMAGE output #5."
+      },
+      "5": {
+        "name": "image_6",
+        "tooltip": "Standard IMAGE output #6."
+      },
+      "6": {
+        "name": "image_7",
+        "tooltip": "Standard IMAGE output #7."
+      },
+      "7": {
+        "name": "image_8",
+        "tooltip": "Standard IMAGE output #8."
+      },
+      "8": {
+        "name": "image_9",
+        "tooltip": "Standard IMAGE output #9."
+      }
+    }
+  },
   "DoubaoVideoUpload": {
     "display_name": "Doubao Video Upload",
     "description": "Local video (≤512MB), TOS bucket upload (≤2GB), or an existing tos:// URL.",
@@ -112,6 +168,26 @@
       "0": {
         "name": "video",
         "tooltip": "Video payload for Doubao Run Core"
+      }
+    }
+  },
+  "DoubaoVideoToImageAudio": {
+    "display_name": "Video to Image & Audio",
+    "description": "Convert VIDEO to standard IMAGE and AUDIO outputs, auto-parsing size/sample-rate/silence length from the input video.",
+    "inputs": {
+      "video": {
+        "name": "Video Input",
+        "tooltip": "Connect the VIDEO output from DoubaoVideoUpload (local upload mode required). Resolution, sample rate, and fallback silence duration are parsed automatically."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "image",
+        "tooltip": "Standard IMAGE output (first frame when available; placeholder on decode fallback)."
+      },
+      "1": {
+        "name": "audio",
+        "tooltip": "Standard AUDIO output (extracted track, or silence when missing/extraction fallback)."
       }
     }
   },

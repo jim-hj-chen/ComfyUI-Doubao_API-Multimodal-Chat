@@ -4,11 +4,13 @@
 
 ## 功能概览
 
-- 6 个节点：
+- 8 个节点：
   - `DoubaoModelConfig`（豆包模型配置）
   - `DoubaoTextInput`（豆包文本输入）
   - `DoubaoImageUpload`（豆包图片上传）
+  - `DoubaoImageListToImage`（图片列表转图像，9路）
   - `DoubaoVideoUpload`（豆包视频上传）
+  - `DoubaoVideoToImageAudio`（视频转图像与音频）
   - `DoubaoFileUpload`（豆包文件上传）
   - `DoubaoRunCore`（豆包运行核心）
 - 响应模式：支持非流式 / 流式
@@ -93,7 +95,26 @@ pip install -r requirements.txt
 - 远程部署说明（AutoDL 等）：
   - 上传会先保存到 `ComfyUI/input/doubao_file`，再回填服务器路径
 
-### 6) DoubaoRunCore（豆包运行核心）
+### 6) DoubaoImageListToImage（图片列表转图像，9路）
+
+- 用途：将 `DoubaoImageUpload` 的 `IMAGE_LIST` 输出转换为 ComfyUI 标准 `IMAGE`
+- 输出：固定 9 路（`image_1 ... image_9`），便于下游固定连线
+- 不足 9 张时：自动补黑底占位图
+- 默认占位大小：`512x512`（可通过 `default_width` / `default_height` 调整）
+
+### 7) DoubaoVideoToImageAudio（视频转图像与音频）
+
+- 用途：将 `DoubaoVideoUpload` 的 `VIDEO` 输出转换为 ComfyUI 标准 `IMAGE` + `AUDIO`
+- `IMAGE`：优先提取视频首帧；解码失败时返回占位图
+- `AUDIO`：优先提取视频音轨；无音轨或提取失败时自动补静音
+- 输入：仅 `video` 一个输入口
+- 自动解析：
+  - 图像尺寸：优先使用视频分辨率，失败时兜底 `512x512`
+  - 音频采样率：优先使用视频音轨采样率，失败时兜底 `44100`
+  - 静音时长：优先使用视频时长（向上取整秒），失败时兜底 `1s`
+- 说明：仅支持本地上传模式的视频路径（`tos://` 地址模式无法本地解码）
+
+### 8) DoubaoRunCore（豆包运行核心）
 
 - 输入：
   - `config`（必填）
@@ -112,11 +133,22 @@ pip install -r requirements.txt
 `DoubaoTextInput -> DoubaoRunCore(user_prompt)`（系统提示词同理接到 `system_prompt`）  
 `DoubaoImageUpload -> DoubaoRunCore(images)`
 
+### 文本 + 图片（转标准 IMAGE）
+
+`DoubaoImageUpload -> DoubaoImageListToImage(images)`  
+`DoubaoImageListToImage(image_1...image_9) -> ComfyUI 原生 IMAGE 节点（预览/保存/后处理）`
+
 ### 文本 + 视频
 
 `DoubaoModelConfig -> DoubaoRunCore(config)`  
 `DoubaoTextInput -> DoubaoRunCore(user_prompt)`  
 `DoubaoVideoUpload -> DoubaoRunCore(video)`
+
+### 视频转标准 IMAGE + AUDIO
+
+`DoubaoVideoUpload -> DoubaoVideoToImageAudio(video)`  
+`DoubaoVideoToImageAudio(image) -> ComfyUI 原生 IMAGE 节点`  
+`DoubaoVideoToImageAudio(audio) -> ComfyUI 原生 AUDIO 节点`
 
 ### 文本 + 文档
 
