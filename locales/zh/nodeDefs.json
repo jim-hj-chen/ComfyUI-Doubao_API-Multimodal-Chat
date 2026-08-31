@@ -141,7 +141,7 @@
       },
       "context_cache": {
         "name": "上下文缓存",
-        "tooltip": "默认关闭。开启后把本轮对话写入方舟服务端缓存，下次排队运行会自动衔接上一轮；关闭则每次独立请求。也可接入「上一轮响应 ID」。"
+        "tooltip": "默认关闭。开启后把本轮对话写入方舟并在节点内记住会话；下次运行自动衔接。关闭则清除记忆，每次独立请求。"
       },
       "system_prompt": {
         "name": "系统提示词",
@@ -167,13 +167,9 @@
         "name": "文件",
         "tooltip": "可选文档"
       },
-      "previous_response_id": {
-        "name": "上一轮响应 ID",
-        "tooltip": "可选。接入上游的「响应 ID」以续写指定会话；留空则使用本节点上次缓存。"
-      },
       "last_response_id": {
         "name": "缓存响应 ID",
-        "tooltip": "由节点自动保存，无需手动填写。"
+        "tooltip": "由节点在开启上下文缓存时自动保存，界面不显示。"
       }
     },
     "outputs": {
@@ -184,10 +180,6 @@
       "1": {
         "name": "用量",
         "tooltip": "Token 统计 JSON 字符串"
-      },
-      "2": {
-        "name": "响应 ID",
-        "tooltip": "本轮 Responses API 的 response_id，可用于下一轮上下文缓存"
       }
     }
   },

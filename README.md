@@ -97,12 +97,9 @@ pip install -r requirements.txt
 
 - 输入：
   - `config`（必填）
-  - `context_cache`（默认关闭）：开启后使用方舟上下文缓存，下次运行自动衔接上一轮
+  - `context_cache`（默认关闭）：开启后由节点记住会话并在下次运行自动衔接；关闭则清除记忆
   - `system_prompt` / `user_prompt`（可选，仅支持从豆包文本输入节点接入，本节点不可编辑）
   - `images` / `video` / `file`（可选）
-  - `previous_response_id`（可选，接入上一轮「响应 ID」）
-- 输出：
-  - `output` / `usage` / `response_id`
 - 行为：
   - 本地文件：先上传到 Files API，再在 Responses 请求中引用 `file_id`
   - 视频默认本地上传；大文件可选 TOS Bucket（≤2GB），或直接使用已有 `tos://` 地址

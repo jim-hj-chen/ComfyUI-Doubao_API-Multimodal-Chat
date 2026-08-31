@@ -2050,7 +2050,7 @@ app.registerExtension({
       installDoubaoRunCoreSizeDefaults(nodeType);
       const forcePromptInputs = (group) => {
         if (!group) return;
-        for (const key of ["system_prompt", "user_prompt", "text", "previous_response_id"]) {
+        for (const key of ["system_prompt", "user_prompt", "text"]) {
           if (!group[key]) continue;
           group[key][1] = { ...(group[key][1] || {}), forceInput: true, multiline: true };
         }

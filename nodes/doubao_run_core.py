@@ -18,8 +18,8 @@ class DoubaoRunCore:
     """工作流运行核心：汇聚配置、提示词与多模态输入并调用 Doubao Responses API。"""
 
     CATEGORY = "Doubao API"
-    RETURN_TYPES = ("STRING", "STRING", "STRING")
-    RETURN_NAMES = ("output", "usage", "response_id")
+    RETURN_TYPES = ("STRING", "STRING")
+    RETURN_NAMES = ("output", "usage")
     FUNCTION = "run"
 
     @classmethod
@@ -35,7 +35,6 @@ class DoubaoRunCore:
                 "images": ("IMAGE_LIST",),
                 "video": ("VIDEO",),
                 "file": ("FILE",),
-                "previous_response_id": ("STRING", {"forceInput": True, "default": ""}),
                 "last_response_id": ("STRING", {"default": ""}),
             },
         }
@@ -49,7 +48,6 @@ class DoubaoRunCore:
         images: Optional[ImageListType] = None,
         video: Optional[VideoType] = None,
         file: Optional[FileType] = None,
-        previous_response_id: Optional[str] = None,
         last_response_id: str = "",
     ) -> Dict[str, Any]:
         self._validate_config(config)
@@ -75,9 +73,7 @@ class DoubaoRunCore:
             raise ValueError("请至少提供一种输入：文本、图片、视频或文档。")
 
         use_cache = bool(context_cache)
-        chain_id = ""
-        if use_cache:
-            chain_id = (previous_response_id or last_response_id or "").strip()
+        chain_id = (last_response_id or "").strip() if use_cache else ""
 
         input_messages: List[Dict[str, Any]] = []
         if (system_prompt or "").strip() and not chain_id:
@@ -114,7 +110,7 @@ class DoubaoRunCore:
         stored_id = api_id if use_cache else ""
         return {
             "ui": {"last_response_id": [stored_id]},
-            "result": (output_text or "", usage_text, api_id),
+            "result": (output_text or "", usage_text),
         }
 
     def _build_image_contents(
