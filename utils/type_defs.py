@@ -81,3 +81,4 @@ class StreamResult(TypedDict):
 
     text: str
     usage: Dict[str, Any]
+    response_id: str

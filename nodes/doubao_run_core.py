@@ -18,8 +18,8 @@ class DoubaoRunCore:
     """工作流运行核心：汇聚配置、提示词与多模态输入并调用 Doubao Responses API。"""
 
     CATEGORY = "Doubao API"
-    RETURN_TYPES = ("STRING", "STRING")
-    RETURN_NAMES = ("output", "usage")
+    RETURN_TYPES = ("STRING", "STRING", "STRING")
+    RETURN_NAMES = ("output", "usage", "response_id")
     FUNCTION = "run"
 
     @classmethod
@@ -27,6 +27,7 @@ class DoubaoRunCore:
         return {
             "required": {
                 "config": ("CONFIG",),
+                "context_cache": ("BOOLEAN", {"default": False}),
             },
             "optional": {
                 "system_prompt": ("STRING", {"forceInput": True, "default": "", "multiline": True}),
@@ -34,18 +35,23 @@ class DoubaoRunCore:
                 "images": ("IMAGE_LIST",),
                 "video": ("VIDEO",),
                 "file": ("FILE",),
+                "previous_response_id": ("STRING", {"forceInput": True, "default": ""}),
+                "last_response_id": ("STRING", {"default": ""}),
             },
         }
 
     def run(
         self,
         config: ConfigType,
+        context_cache: bool = False,
         system_prompt: str = "",
         user_prompt: Optional[str] = None,
         images: Optional[ImageListType] = None,
         video: Optional[VideoType] = None,
         file: Optional[FileType] = None,
-    ) -> Tuple[str, str]:
+        previous_response_id: Optional[str] = None,
+        last_response_id: str = "",
+    ) -> Dict[str, Any]:
         self._validate_config(config)
         client = DoubaoApiClient(
             base_url=config["base_url"],
@@ -53,15 +59,6 @@ class DoubaoRunCore:
             timeout_seconds=int(config.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS)),
             max_retries=3,
         )
-
-        input_messages: List[Dict[str, Any]] = []
-        if (system_prompt or "").strip():
-            input_messages.append(
-                {
-                    "role": "system",
-                    "content": [{"type": "input_text", "text": system_prompt.strip()}],
-                }
-            )
 
         user_content: List[Dict[str, Any]] = []
         if images:
@@ -77,19 +74,48 @@ class DoubaoRunCore:
         if not user_content:
             raise ValueError("请至少提供一种输入：文本、图片、视频或文档。")
 
+        use_cache = bool(context_cache)
+        chain_id = ""
+        if use_cache:
+            chain_id = (previous_response_id or last_response_id or "").strip()
+
+        input_messages: List[Dict[str, Any]] = []
+        if (system_prompt or "").strip() and not chain_id:
+            input_messages.append(
+                {
+                    "role": "system",
+                    "content": [{"type": "input_text", "text": system_prompt.strip()}],
+                }
+            )
         input_messages.append({"role": "user", "content": user_content})
-        payload = {
+        payload: Dict[str, Any] = {
             "model": config["model_id"],
             "input": input_messages,
             "max_output_tokens": int(config["max_tokens"]),
             "temperature": float(config["temperature"]),
             "top_p": float(config["top_p"]),
         }
+        if use_cache:
+            payload["store"] = True
+            payload["caching"] = {"type": "enabled"}
+            if chain_id:
+                payload["previous_response_id"] = chain_id
 
-        LOGGER.info("请求模型: %s, stream=%s", config["model_id"], False)
-        output_text, usage = client.create_response(payload=payload, stream=False)
+        LOGGER.info(
+            "请求模型: %s, stream=%s, context_cache=%s, previous_response_id=%s",
+            config["model_id"],
+            False,
+            use_cache,
+            chain_id or "-",
+        )
+        output_text, usage, response_id = client.create_response(payload=payload, stream=False)
         usage_text = json.dumps(usage or {}, ensure_ascii=False)
-        return output_text or "", usage_text
+        api_id = (response_id or "").strip()
+        stored_id = api_id if use_cache else ""
+        return {
+            "ui": {"last_response_id": [stored_id]},
+            "result": (output_text or "", usage_text, api_id),
+        }
 
     def _build_image_contents(
         self,

@@ -21,23 +21,22 @@ const DOUBAO_RUN_CORE_NODE_WIDTH = 440;
 const DOUBAO_RUN_CORE_NODE_HEIGHT = 300;
 const DOUBAO_RUN_CORE_MIN_WIDTH = 380;
 const DOUBAO_RUN_CORE_MIN_HEIGHT = 240;
-const DOUBAO_PROMPT_SPLIT_NODE_WIDTH = 600;
-const DOUBAO_PROMPT_SPLIT_NODE_HEIGHT = 550;
+const DOUBAO_PROMPT_SPLIT_NODE_WIDTH = 560;
+const DOUBAO_PROMPT_SPLIT_NODE_HEIGHT = 430;
 const DOUBAO_PROMPT_SPLIT_MIN_WIDTH = 420;
-const DOUBAO_PROMPT_SPLIT_MIN_HEIGHT = 360;
+const DOUBAO_PROMPT_SPLIT_MIN_HEIGHT = 320;
 const DOUBAO_PROMPT_SPLIT_MAX_ITEMS = 1000;
-const DOUBAO_SPLIT_PREVIEW_ITEM_HEIGHT = 40;
+const DOUBAO_SPLIT_PREVIEW_ITEM_HEIGHT = 34;
 const DOUBAO_SPLIT_PREVIEW_VISIBLE_COUNT = 5;
-const DOUBAO_SPLIT_PREVIEW_LIST_GAP = 6;
-const DOUBAO_SPLIT_PREVIEW_LIST_PADDING = 12;
+const DOUBAO_SPLIT_PREVIEW_LIST_GAP = 4;
+const DOUBAO_SPLIT_PREVIEW_LIST_PADDING = 10;
 const DOUBAO_SPLIT_PREVIEW_LIST_HEIGHT =
   DOUBAO_SPLIT_PREVIEW_ITEM_HEIGHT * DOUBAO_SPLIT_PREVIEW_VISIBLE_COUNT +
   DOUBAO_SPLIT_PREVIEW_LIST_GAP * (DOUBAO_SPLIT_PREVIEW_VISIBLE_COUNT - 1) +
   DOUBAO_SPLIT_PREVIEW_LIST_PADDING;
-const DOUBAO_SPLIT_PREVIEW_HEADER_HEIGHT = 52;
+const DOUBAO_SPLIT_PREVIEW_HEADER_HEIGHT = 40;
 const DOUBAO_SPLIT_PREVIEW_WIDGET_HEIGHT =
-  DOUBAO_SPLIT_PREVIEW_HEADER_HEIGHT + DOUBAO_SPLIT_PREVIEW_LIST_HEIGHT + 8;
-const DOUBAO_SPLIT_INDEX_WIDTH_CH = 4;
+  DOUBAO_SPLIT_PREVIEW_HEADER_HEIGHT + DOUBAO_SPLIT_PREVIEW_LIST_HEIGHT + 6;
 const DOUBAO_MEDIA_NODE_WIDTH =
   MEDIA_CARD_WIDTH * MEDIA_DEFAULT_COLUMNS +
   MEDIA_CARD_GAP * (MEDIA_DEFAULT_COLUMNS - 1) +
@@ -202,15 +201,47 @@ function toggleWidgetVisibility(widget, visible) {
 }
 
 function hideDoubaoRunCoreTextWidgets(node) {
-  for (const name of ["stream", "system_prompt", "user_prompt", "text"]) {
+  for (const name of ["stream", "system_prompt", "user_prompt", "text", "last_response_id"]) {
     const widget = findWidget(node, name);
     if (!widget) continue;
     const hasInput = node.inputs?.some((input) => input.name === name);
-    if (name !== "stream" && !hasInput && typeof node.convertWidgetToInput === "function") {
+    if (!["stream", "last_response_id"].includes(name) && !hasInput && typeof node.convertWidgetToInput === "function") {
       node.convertWidgetToInput(widget);
     }
     toggleWidgetVisibility(findWidget(node, name), false);
   }
+}
+
+function installDoubaoRunCoreContextCache(node) {
+  const cacheWidget = findWidget(node, "context_cache");
+  const lastIdWidget = findWidget(node, "last_response_id");
+  toggleWidgetVisibility(lastIdWidget, false);
+
+  if (cacheWidget && !cacheWidget._doubaoCacheGuard) {
+    cacheWidget._doubaoCacheGuard = true;
+    const originalCallback = cacheWidget.callback;
+    cacheWidget.callback = function contextCacheCallback(value, ...args) {
+      if (!value && lastIdWidget) {
+        lastIdWidget.value = "";
+      }
+      if (originalCallback) {
+        originalCallback.call(this, value, ...args);
+      }
+    };
+  }
+
+  if (node._doubaoCacheExecutedGuard) return;
+  node._doubaoCacheExecutedGuard = true;
+  const originalOnExecuted = node.onExecuted;
+  node.onExecuted = function onExecutedContextCache(message) {
+    if (originalOnExecuted) originalOnExecuted.apply(this, arguments);
+    const widget = findWidget(this, "last_response_id");
+    if (!widget) return;
+    const ids = message?.last_response_id;
+    const nextId = Array.isArray(ids) ? ids[0] : ids;
+    if (nextId == null) return;
+    widget.value = String(nextId);
+  };
 }
 
 function injectDoubaoRunCoreStyles() {
@@ -670,90 +701,27 @@ function injectStyles() {
     .doubao-split-wrap {
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 5px;
       width: 100%;
       flex: 0 0 auto;
       min-width: 0;
       box-sizing: border-box;
       overflow: hidden;
-      padding-top: 4px;
-    }
-    .doubao-split-editor {
-      flex: 1 1 auto;
-      min-height: 0;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-    .doubao-split-label {
-      font-size: 12px;
-      color: #d8dee9;
-      line-height: 1.3;
-    }
-    .doubao-split-textarea {
-      flex: 1 1 auto;
-      min-height: 120px;
-      width: 100%;
-      resize: none;
-      border: 1px solid #4c566a;
-      border-radius: 6px;
-      background: #1f2430;
-      color: #eceff4;
-      padding: 8px;
-      box-sizing: border-box;
-      overflow: auto;
-      font-size: 12px;
-      line-height: 1.5;
-      font-family: inherit;
-    }
-    .doubao-split-settings {
-      flex: 0 0 auto;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      min-width: 0;
-      flex-wrap: wrap;
-    }
-    .doubao-split-delimiter {
-      flex: 1 1 200px;
-      min-width: 140px;
-      border: 1px solid #4c566a;
-      border-radius: 6px;
-      background: #1f2430;
-      color: #eceff4;
-      padding: 6px 8px;
-      box-sizing: border-box;
-      font-size: 12px;
-      line-height: 1.3;
-    }
-    .doubao-split-checkbox-wrap {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      color: #d8dee9;
-      font-size: 12px;
-      line-height: 1.3;
-      user-select: none;
-    }
-    .doubao-split-preview {
-      flex: 1 1 auto;
-      min-height: 0;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
+      padding-top: 2px;
     }
     .doubao-split-title {
       flex: 0 0 auto;
       font-size: 12px;
-      color: #d8dee9;
+      color: #d6dded;
       font-weight: 600;
-      line-height: 1.4;
+      line-height: 1.25;
+      letter-spacing: 0.01em;
     }
     .doubao-split-summary {
       flex: 0 0 auto;
       font-size: 11px;
-      color: #b8c0cc;
-      line-height: 1.35;
+      color: #aab5c7;
+      line-height: 1.2;
     }
     .doubao-split-warning {
       color: #f6c177;
@@ -762,47 +730,57 @@ function injectStyles() {
       flex: 0 0 auto;
       overflow-x: hidden;
       overflow-y: auto;
-      border: 1px solid #4c566a;
-      border-radius: 6px;
-      background: #1f2430;
-      padding: 6px;
+      border: 1px solid #46516a;
+      border-radius: 8px;
+      background: linear-gradient(180deg, #242b3b 0%, #202737 100%);
+      padding: 5px;
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 4px;
       box-sizing: border-box;
     }
     .doubao-split-item {
       display: flex;
       flex-direction: row;
       align-items: center;
-      gap: 8px;
+      gap: 7px;
       box-sizing: border-box;
-      min-height: 40px;
-      max-height: 40px;
-      border: 1px solid #3f485a;
-      border-radius: 6px;
-      padding: 4px 8px;
+      min-height: 34px;
+      max-height: 34px;
+      border: 1px solid #3b455d;
+      border-radius: 7px;
+      padding: 0 8px;
       font-size: 12px;
-      line-height: 1.35;
-      color: #e5e9f0;
-      background: #252b38;
+      line-height: 1.3;
+      color: #e7ecf7;
+      background: #2a3245;
       cursor: pointer;
       overflow: hidden;
+      transition: border-color 120ms ease, background 120ms ease;
     }
     .doubao-split-item:hover {
-      border-color: #6784b3;
+      border-color: #7b8fb8;
+      background: #313a4f;
     }
     .doubao-split-item-index {
-      flex: 0 0 auto;
-      width: 4ch;
-      min-width: 4ch;
-      max-width: 4ch;
-      text-align: right;
-      color: #9fb0cc;
-      font-size: 11px;
+      flex: 0 0 32px;
+      width: 32px;
+      min-width: 32px;
+      max-width: 32px;
+      height: 20px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      color: #c7d4ed;
+      font-size: 10px;
+      font-weight: 600;
       font-variant-numeric: tabular-nums;
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       user-select: none;
+      border-radius: 999px;
+      background: #1f2634;
+      border: 1px solid #3c4962;
     }
     .doubao-split-item-body {
       flex: 1 1 auto;
@@ -811,6 +789,7 @@ function injectStyles() {
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      color: #dce4f5;
     }
     .doubao-split-modal-text {
       width: min(640px, 82vw);
@@ -818,8 +797,8 @@ function injectStyles() {
       resize: none;
       border: 1px solid #4c566a;
       border-radius: 6px;
-      background: #1f2430;
-      color: #eceff4;
+      background: #1d2432;
+      color: #edf2fb;
       padding: 10px 12px;
       box-sizing: border-box;
       font-size: 13px;
@@ -828,6 +807,7 @@ function injectStyles() {
       overflow: auto;
       white-space: pre-wrap;
       word-break: break-word;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
     }
   `;
   document.head.appendChild(style);
@@ -1848,7 +1828,7 @@ function installPromptSplitPreview(node) {
   }
 
   function formatIndexLabel(index) {
-    return String(index + 1).padStart(DOUBAO_SPLIT_INDEX_WIDTH_CH, " ");
+    return String(index + 1);
   }
 
   function renderPreview() {
@@ -1870,7 +1850,7 @@ function installPromptSplitPreview(node) {
 
       const emptyIndex = document.createElement("div");
       emptyIndex.className = "doubao-split-item-index";
-      emptyIndex.textContent = formatIndexLabel(0).trim() || "-";
+      emptyIndex.textContent = "-";
       empty.appendChild(emptyIndex);
 
       const emptyBody = document.createElement("div");
@@ -2070,7 +2050,7 @@ app.registerExtension({
       installDoubaoRunCoreSizeDefaults(nodeType);
       const forcePromptInputs = (group) => {
         if (!group) return;
-        for (const key of ["system_prompt", "user_prompt", "text"]) {
+        for (const key of ["system_prompt", "user_prompt", "text", "previous_response_id"]) {
           if (!group[key]) continue;
           group[key][1] = { ...(group[key][1] || {}), forceInput: true, multiline: true };
         }
@@ -2082,6 +2062,7 @@ app.registerExtension({
       nodeType.prototype.onConfigure = function onConfigure() {
         const result = originalOnConfigure ? originalOnConfigure.apply(this, arguments) : undefined;
         hideDoubaoRunCoreTextWidgets(this);
+        installDoubaoRunCoreContextCache(this);
         applyDoubaoRunCoreSize(this, { preferDefault: false });
         return result;
       };
@@ -2114,6 +2095,7 @@ app.registerExtension({
       }
       if (nodeData.name === "DoubaoRunCore") {
         hideDoubaoRunCoreTextWidgets(this);
+        installDoubaoRunCoreContextCache(this);
       }
       if (nodeData.name === "DoubaoModelConfig") {
         installModelPresetBinding(this);

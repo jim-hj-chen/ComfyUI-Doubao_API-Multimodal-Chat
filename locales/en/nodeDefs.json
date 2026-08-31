@@ -139,9 +139,9 @@
         "name": "Config (required)",
         "tooltip": "Must connect Doubao Model Config"
       },
-      "stream": {
-        "name": "Stream",
-        "tooltip": "Use streaming responses"
+      "context_cache": {
+        "name": "Context Cache",
+        "tooltip": "Off by default. When on, this turn is stored on Ark and the next queue run continues the same conversation. Turn off for a fresh request. You can also connect Previous Response ID."
       },
       "system_prompt": {
         "name": "System Prompt",
@@ -166,6 +166,14 @@
       "file": {
         "name": "file",
         "tooltip": "Optional document"
+      },
+      "previous_response_id": {
+        "name": "Previous Response ID",
+        "tooltip": "Optional. Connect an upstream Response ID to continue that thread; otherwise this node uses its last cached ID."
+      },
+      "last_response_id": {
+        "name": "Cached Response ID",
+        "tooltip": "Saved automatically. Do not edit."
       }
     },
     "outputs": {
@@ -176,6 +184,10 @@
       "1": {
         "name": "usage",
         "tooltip": "Token usage as a JSON string"
+      },
+      "2": {
+        "name": "Response ID",
+        "tooltip": "This turn's Responses API response_id, for the next cached turn"
       }
     }
   },

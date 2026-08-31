@@ -182,8 +182,8 @@ class DoubaoApiClient:
         self,
         payload: Dict[str, Any],
         stream: bool = False,
-    ) -> Tuple[str, Dict[str, Any]]:
-        """调用 Responses API，返回 (文本, usage)。"""
+    ) -> Tuple[str, Dict[str, Any], str]:
+        """调用 Responses API，返回 (文本, usage, response_id)。"""
         url = f"{self.base_url}/responses"
         request_payload = dict(payload)
         request_payload["stream"] = stream
@@ -199,7 +199,7 @@ class DoubaoApiClient:
                 if response.status_code >= 400:
                     self._raise_response_error(response)
                 stream_result = self._consume_sse_events(response.iter_lines(decode_unicode=True))
-                return stream_result["text"], stream_result["usage"]
+                return stream_result["text"], stream_result["usage"], stream_result.get("response_id") or ""
 
         response = self.session.post(
             url,
@@ -210,7 +210,7 @@ class DoubaoApiClient:
         data = self._parse_response_json(response)
         text = _extract_output_text(data)
         usage = data.get("usage") or {}
-        return text, usage
+        return text, usage, _extract_response_id(data)
 
     def _parse_response_json(self, response: requests.Response) -> Dict[str, Any]:
         """解析 JSON 响应，并处理错误码。"""
@@ -241,6 +241,7 @@ class DoubaoApiClient:
         """消费 SSE 事件流并聚合文本与 usage。"""
         chunks = []
         usage: Dict[str, Any] = {}
+        response_id = ""
         for line in lines:
             if not line:
                 continue
@@ -263,9 +264,10 @@ class DoubaoApiClient:
             elif event_type == "response.completed":
                 response_obj = event.get("response") or {}
                 usage = response_obj.get("usage") or usage
+                response_id = _extract_response_id(response_obj) or _extract_response_id(event) or response_id
             elif event_type.endswith(".failed"):
                 raise DoubaoApiError(f"流式请求失败：{event}")
-        return {"text": "".join(chunks).strip(), "usage": usage}
+        return {"text": "".join(chunks).strip(), "usage": usage, "response_id": response_id}
 
 
 def _file_status_or_raise(file_id: str, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -337,6 +339,23 @@ def set_cached_file_id(cache_key: str, file_id: str) -> None:
         "file_id": file_id.strip(),
         "updated_at": time.time(),
     }
+
+
+def _extract_response_id(payload: Dict[str, Any]) -> str:
+    """从 Responses API 响应中提取 response_id。"""
+    if not isinstance(payload, dict):
+        return ""
+    for key in ("id", "response_id"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    nested = payload.get("response")
+    if isinstance(nested, dict):
+        for key in ("id", "response_id"):
+            value = nested.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return ""
 
 
 def _extract_output_text(response_json: Dict[str, Any]) -> str:
