@@ -1748,6 +1748,63 @@ function installMediaWidget(node, options) {
   };
 }
 
+const SPLIT_DELIMITER_PROP = "doubao_split_delimiter";
+const SPLIT_TRIM_PROP = "doubao_split_trim_each";
+
+function coerceTrimEach(value, fallback = true) {
+  if (value === undefined || value === null || value === "") return fallback;
+  if (typeof value === "boolean") return value;
+  if (value === "false" || value === "False" || value === 0 || value === "0") return false;
+  if (value === "true" || value === "True" || value === 1 || value === "1") return true;
+  return Boolean(value);
+}
+
+function persistPromptSplitSettings(node, serialized) {
+  const delimiterWidget = findWidget(node, "delimiter");
+  const trimWidget = findWidget(node, "trim_each");
+  if (!delimiterWidget || !trimWidget) return;
+  node.properties = node.properties || {};
+  node.properties[SPLIT_DELIMITER_PROP] = String(delimiterWidget.value ?? "");
+  node.properties[SPLIT_TRIM_PROP] = coerceTrimEach(trimWidget.value, true);
+  if (!serialized) return;
+  serialized.properties = serialized.properties || {};
+  serialized.properties[SPLIT_DELIMITER_PROP] = node.properties[SPLIT_DELIMITER_PROP];
+  serialized.properties[SPLIT_TRIM_PROP] = node.properties[SPLIT_TRIM_PROP];
+}
+
+function restorePromptSplitSettings(node, info) {
+  const delimiterWidget = findWidget(node, "delimiter");
+  const trimWidget = findWidget(node, "trim_each");
+  if (!delimiterWidget || !trimWidget) return;
+
+  const props = info?.properties || {};
+  const named = info?.widgets_values_named || {};
+  const values = Array.isArray(info?.widgets_values) ? info.widgets_values : [];
+
+  let delimiter = props[SPLIT_DELIMITER_PROP];
+  if (delimiter === undefined && named.delimiter !== undefined) {
+    delimiter = named.delimiter;
+  }
+  if (delimiter === undefined && values.length >= 1 && typeof values[0] === "string") {
+    delimiter = values[0];
+  }
+
+  let trimEach = props[SPLIT_TRIM_PROP];
+  if (trimEach === undefined && named.trim_each !== undefined) {
+    trimEach = named.trim_each;
+  }
+  if (trimEach === undefined && values.length >= 2) {
+    trimEach = values[1];
+  }
+
+  if (delimiter !== undefined) {
+    delimiterWidget.value = String(delimiter);
+  }
+  if (trimEach !== undefined) {
+    trimWidget.value = coerceTrimEach(trimEach, true);
+  }
+}
+
 function installPromptSplitPreview(node) {
   injectStyles();
   const delimiterWidget = findWidget(node, "delimiter");
@@ -1790,6 +1847,7 @@ function installPromptSplitPreview(node) {
     serialize: false,
     hideOnZoom: false,
   });
+  domWidget.serialize = false;
 
   function computeWidgetSize(width) {
     const nodeWidth = node.size?.[0] ?? width ?? DOUBAO_PROMPT_SPLIT_NODE_WIDTH;
@@ -1911,6 +1969,22 @@ function installPromptSplitPreview(node) {
     }
     return undefined;
   };
+
+  function bindPersistCallback(widget) {
+    if (!widget || widget._doubaoSplitPersistGuard) return;
+    widget._doubaoSplitPersistGuard = true;
+    const originalCallback = widget.callback;
+    widget.callback = function persistSplitSetting(value, ...args) {
+      persistPromptSplitSettings(node);
+      if (originalCallback) {
+        return originalCallback.call(this, value, ...args);
+      }
+      return undefined;
+    };
+  }
+
+  bindPersistCallback(delimiterWidget);
+  bindPersistCallback(trimWidget);
 
   syncPreviewFromExecution([], [], 0, false);
   applyPreviewLayout();
@@ -2073,6 +2147,21 @@ app.registerExtension({
     }
     if (nodeData.name === "DoubaoPromptSplitBatcher") {
       installPromptSplitNodeSizeDefaults(nodeType);
+      const originalOnConfigure = nodeType.prototype.onConfigure;
+      nodeType.prototype.onConfigure = function onConfigurePromptSplit() {
+        const result = originalOnConfigure ? originalOnConfigure.apply(this, arguments) : undefined;
+        restorePromptSplitSettings(this, arguments[0]);
+        persistPromptSplitSettings(this);
+        return result;
+      };
+      const originalOnSerialize = nodeType.prototype.onSerialize;
+      nodeType.prototype.onSerialize = function onSerializePromptSplit(serialized) {
+        persistPromptSplitSettings(this, serialized);
+        if (originalOnSerialize) {
+          return originalOnSerialize.apply(this, arguments);
+        }
+        return undefined;
+      };
     }
 
     if (nodeData.name === "DoubaoVideoUpload") {
