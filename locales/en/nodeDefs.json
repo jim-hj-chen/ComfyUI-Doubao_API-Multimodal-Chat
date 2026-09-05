@@ -79,7 +79,7 @@
     }
   },
   "DoubaoImageListToImage": {
-    "display_name": "Image List to Image (9 Outputs)",
+    "display_name": "Image List to Image",
     "description": "Split an IMAGE_LIST into 9 standard IMAGE outputs, filling missing slots with placeholders.",
     "inputs": {
       "images": {
@@ -168,26 +168,6 @@
       "0": {
         "name": "video",
         "tooltip": "Video payload for Doubao Run Core"
-      }
-    }
-  },
-  "DoubaoVideoToImageAudio": {
-    "display_name": "Video to Image & Audio",
-    "description": "Convert VIDEO to standard IMAGE and AUDIO outputs, auto-parsing size/sample-rate/silence length from the input video.",
-    "inputs": {
-      "video": {
-        "name": "Video Input",
-        "tooltip": "Connect the VIDEO output from DoubaoVideoUpload (local upload mode required). Resolution, sample rate, and fallback silence duration are parsed automatically."
-      }
-    },
-    "outputs": {
-      "0": {
-        "name": "image",
-        "tooltip": "Standard IMAGE output (first frame when available; placeholder on decode fallback)."
-      },
-      "1": {
-        "name": "audio",
-        "tooltip": "Standard AUDIO output (extracted track, or silence when missing/extraction fallback)."
       }
     }
   },

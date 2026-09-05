@@ -1,172 +1,100 @@
-# ComfyUI-Doubao-API-Multimodal-Chat
+# ComfyUI Doubao API Multimodal Chat
 
-一个可直接安装到 ComfyUI `custom_nodes` 的豆包多模态插件，支持文本、图片、视频、文档输入，并通过 Doubao Responses API 返回文本结果和 Token 使用信息。
+[English](README.md) | [中文](README.zh-CN.md)
 
-## 功能概览
+ComfyUI custom nodes for [Doubao](https://www.volcengine.com/product/doubao) (Volcengine Ark). Send text, images, video, and documents through the Responses API and get model text plus token usage.
 
-- 8 个节点：
-  - `DoubaoModelConfig`（豆包模型配置）
-  - `DoubaoTextInput`（豆包文本输入）
-  - `DoubaoImageUpload`（豆包图片上传）
-  - `DoubaoImageListToImage`（图片列表转图像，9路）
-  - `DoubaoVideoUpload`（豆包视频上传）
-  - `DoubaoVideoToImageAudio`（视频转图像与音频）
-  - `DoubaoFileUpload`（豆包文件上传）
-  - `DoubaoRunCore`（豆包运行核心）
-- 响应模式：支持非流式 / 流式
-- 文件输入：通过本地路径上传到 Files API（浏览器选择或拖拽会先写入 ComfyUI 服务器，再回填绝对路径）
-- 输出：
-  - `output`：模型文本输出（`STRING`）
-  - `usage`：Token 统计 JSON 字符串（`STRING`）
-- 语言支持：简体中文、English（跟随 ComfyUI 界面语言）
+Requires a Volcengine Ark API key. Node labels follow the ComfyUI UI language (Simplified Chinese / English).
 
-## 安装
+## Features
 
-1. 将本项目目录放入 ComfyUI 的 `custom_nodes` 目录中。
-2. 安装依赖：
+- Multimodal input: text, up to 9 images, one video, one document
+- Model presets plus a custom `model_id`
+- Optional context cache so the same Run Core node continues a session
+- Local upload with drag-and-drop (files land on the ComfyUI server, then paths are filled in)
+- Large video via Volcengine TOS (up to 2 GB) or an existing `tos://` URL
+- Outputs: `output` (text) and `usage` (token JSON)
+
+## Nodes
+
+Category **Doubao API**:
+
+| Node | Role |
+|------|------|
+| Doubao Model Config | Base URL, API key, model, sampling, timeout |
+| Doubao Text Input | Multiline prompt → system or user prompt |
+| Doubao Image Upload | Local images → `IMAGE_LIST` |
+| Doubao Video Upload | Local file, TOS upload, or `tos://` URL |
+| Doubao File Upload | One document (`pdf` / `txt` / Office / `csv` / `md`) |
+| Doubao Run Core | Calls the API and returns `output` + `usage` |
+
+Category **Doubao API / Tools**:
+
+| Node | Role |
+|------|------|
+| Image List to Image | Split `IMAGE_LIST` into 9 ComfyUI `IMAGE` outputs |
+| Doubao Prompt Split Batcher | Split a long string by delimiter for native batch runs |
+
+## Install
+
+1. Clone or copy this folder into ComfyUI `custom_nodes`.
+2. Install dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-3. 重启 ComfyUI。
+3. Restart ComfyUI.
 
-## 节点说明
+## Quick start
 
-### 1) DoubaoModelConfig
+1. Add **Doubao Model Config**. Set `api_key` and pick a model (or type `model_id`).
+2. Connect Config → **Doubao Run Core**.
+3. Connect **Doubao Text Input** to `user_prompt` (and optionally `system_prompt`).
+4. Optionally connect images / video / file.
+5. Queue the workflow. Read `output` and `usage`.
 
-- `base_url`：填火山引擎 OpenAI SDK 示例中的 `base_url`，默认 `https://ark.cn-beijing.volces.com/api/v3`
-- `api_key`：豆包 API Key（密码输入）
-- `模型预设`：用于快速填充 `model_id`
-- `model_id`：最终生效模型 ID（运行时以此为准）
-- `max_tokens`：1-128000（128k），默认 128000（最大输出 token）
-- `temperature`：0.0-2.0，默认 0.4（偏稳定，适合视频反推与长系统提示词）
-- `top_p`：0.0-1.0，默认 0.9
+Typical graphs:
 
-### 2) DoubaoTextInput
+```
+Doubao Model Config ──────────────► Doubao Run Core
+Doubao Text Input ──► user_prompt ─┘
+Doubao Image Upload ─► images ─────┘
+```
 
-- `prompt`：多行文本输入；输出可接到豆包运行核心的「系统提示词」或「用户提示词」
+```
+Doubao Image Upload ─► Image List to Image ─► native IMAGE nodes
+```
 
-### 3) DoubaoImageUpload
+```
+Doubao Text Input ─► Prompt Split Batcher ─► batch → Doubao Text Input / Run Core
+```
 
-- 本地文件路径：多行绝对路径，每行一个图片（也可通过按钮/拖拽上传后自动回填）
-- 交互能力：
-  - 顶部按钮：`选择图片上传` / `清空`
-  - 拖拽投放：支持拖入多张图片
-  - 缩略图网格：自适应列数，支持删除、拖拽排序、点击放大预览
-- 校验规则：
-  - 图片最多 9 张
-  - 合计 <= 512MB（豆包 API 单次处理上限）
-- 远程部署说明（AutoDL 等）：
-  - 点击上传会先把浏览器选中的文件上传到 ComfyUI 服务器
-  - 服务器端保存目录：`ComfyUI/input/doubao_image`
-  - 节点内部自动回填服务器绝对路径，再参与后续推理
+Turn **Context Cache** on to keep the session on that Run Core node. Turn it off to clear memory.
 
-### 4) DoubaoVideoUpload
+## Limits
 
-默认只需本地选择或拖拽视频，不必填写 TOS。TOS（火山引擎对象存储）是大文件或已有对象时的可选项，通过 **`输入方式`** 展开。
+| Input | Limit |
+|-------|--------|
+| Images | Max 9, 512 MB total |
+| Video (local / Files API) | 512 MB |
+| Video (TOS bucket upload) | 2 GB |
+| Document | One file, 512 MB |
 
-- `输入方式`：
-  - `本地上传（≤512MB）`：默认。选择/拖拽视频，走 Files API
-  - `TOS 对象存储上传（≤2GB）`：本地大文件先落到火山引擎 TOS Bucket（Bucket 必填，Prefix 可选），最大 2GB
-  - `已有 TOS 视频地址`：填写已有 `tos://` 地址，无需再选本地文件
-- 抽帧率固定为 `1.0`（Files API `preprocess_configs.video.fps`），界面不展示、不可改
-- 交互能力：
-  - 顶部按钮：`选择视频上传` / `清空`（TOS 地址模式不显示上传区）
-  - 拖拽投放：支持拖入单个视频
-  - 预览卡片：首帧区域、删除、点击弹窗播放
-- 校验规则：
-  - 本地上传：<= 512MB
-  - TOS 对象存储上传：<= 2GB
-  - TOS 视频地址：由方舟侧按 TOS 对象处理
-- 远程部署说明（AutoDL 等）：
-  - 上传会先保存到 `ComfyUI/input/doubao_video`，再回填服务器路径
+Remote ComfyUI (for example AutoDL): use the node upload buttons or drop files. The plugin writes them under `ComfyUI/input/doubao_image`, `doubao_video`, or `doubao_file` and fills server paths. Do not paste a path that only exists on your laptop.
 
-### 5) DoubaoFileUpload
+Default API base URL: `https://ark.cn-beijing.volces.com/api/v3`.
 
-- 本地文件路径：单个文档绝对路径（也可通过按钮/拖拽上传后自动回填）
-- 支持扩展名：`pdf/txt/doc/docx/xls/xlsx/ppt/pptx/csv/md`
-- 交互能力：
-  - 顶部按钮：`选择文件上传` / `清空`
-  - 拖拽投放：支持拖入单个文档
-  - 文件卡片：显示文件信息、删除、点击查看基础信息
-- 校验规则：
-  - 本地路径：<= 512MB
-- 远程部署说明（AutoDL 等）：
-  - 上传会先保存到 `ComfyUI/input/doubao_file`，再回填服务器路径
+## FAQ
 
-### 6) DoubaoImageListToImage（图片列表转图像，9路）
+**API Key cannot be empty** — Fill a valid key on Doubao Model Config.
 
-- 用途：将 `DoubaoImageUpload` 的 `IMAGE_LIST` 输出转换为 ComfyUI 标准 `IMAGE`
-- 输出：固定 9 路（`image_1 ... image_9`），便于下游固定连线
-- 不足 9 张时：自动补黑底占位图
-- 默认占位大小：`512x512`（可通过 `default_width` / `default_height` 调整）
+**File not found** — Use an absolute path the ComfyUI process can read, or upload through the node.
 
-### 7) DoubaoVideoToImageAudio（视频转图像与音频）
+**File too large** — Stay within the limits above.
 
-- 用途：将 `DoubaoVideoUpload` 的 `VIDEO` 输出转换为 ComfyUI 标准 `IMAGE` + `AUDIO`
-- `IMAGE`：优先提取视频首帧；解码失败时返回占位图
-- `AUDIO`：优先提取视频音轨；无音轨或提取失败时自动补静音
-- 输入：仅 `video` 一个输入口
-- 自动解析：
-  - 图像尺寸：优先使用视频分辨率，失败时兜底 `512x512`
-  - 音频采样率：优先使用视频音轨采样率，失败时兜底 `44100`
-  - 静音时长：优先使用视频时长（向上取整秒），失败时兜底 `1s`
-- 说明：仅支持本地上传模式的视频路径（`tos://` 地址模式无法本地解码）
+**Need at least one input** — Provide text, images, video, or a document.
 
-### 8) DoubaoRunCore（豆包运行核心）
+## License
 
-- 输入：
-  - `config`（必填）
-  - `context_cache`（默认关闭）：开启后由节点记住会话并在下次运行自动衔接；关闭则清除记忆
-  - `system_prompt` / `user_prompt`（可选，仅支持从豆包文本输入节点接入，本节点不可编辑）
-  - `images` / `video` / `file`（可选）
-- 行为：
-  - 本地文件：先上传到 Files API，再在 Responses 请求中引用 `file_id`
-  - 视频默认本地上传；大文件可选 TOS Bucket（≤2GB），或直接使用已有 `tos://` 地址
-
-## 典型连接方式
-
-### 文本 + 图片
-
-`DoubaoModelConfig -> DoubaoRunCore(config)`  
-`DoubaoTextInput -> DoubaoRunCore(user_prompt)`（系统提示词同理接到 `system_prompt`）  
-`DoubaoImageUpload -> DoubaoRunCore(images)`
-
-### 文本 + 图片（转标准 IMAGE）
-
-`DoubaoImageUpload -> DoubaoImageListToImage(images)`  
-`DoubaoImageListToImage(image_1...image_9) -> ComfyUI 原生 IMAGE 节点（预览/保存/后处理）`
-
-### 文本 + 视频
-
-`DoubaoModelConfig -> DoubaoRunCore(config)`  
-`DoubaoTextInput -> DoubaoRunCore(user_prompt)`  
-`DoubaoVideoUpload -> DoubaoRunCore(video)`
-
-### 视频转标准 IMAGE + AUDIO
-
-`DoubaoVideoUpload -> DoubaoVideoToImageAudio(video)`  
-`DoubaoVideoToImageAudio(image) -> ComfyUI 原生 IMAGE 节点`  
-`DoubaoVideoToImageAudio(audio) -> ComfyUI 原生 AUDIO 节点`
-
-### 文本 + 文档
-
-`DoubaoModelConfig -> DoubaoRunCore(config)`  
-`DoubaoTextInput -> DoubaoRunCore(user_prompt)`  
-`DoubaoFileUpload -> DoubaoRunCore(file)`
-
-## 常见问题
-
-- `API Key 不能为空`：请在 `DoubaoModelConfig` 填写有效密钥。
-- `文件不存在`：检查本地绝对路径是否正确，确保 ComfyUI 运行用户有读取权限。
-- `文件大小超限`：按节点错误提示缩小文件。
-- `远程实例读取不到本机文件`：请通过节点上传按钮/拖拽上传，插件会自动写入服务器 `input/doubao_*` 目录并回填可读路径。
-
-## 说明
-
-- 本版本按 MVP 实现，保留了后续扩展空间（如分片上传、上传进度条、更多高级参数）。
-- 前端已支持关键交互增强：
-  - 三个上传节点均支持按钮上传 + 拖拽投放 + 卡片预览
-  - 上传区域会跟随节点宽高缩放
-  - 模型预设自动填充 `model_id`
+Use this plugin with your own Ark credentials and Doubao / Volcengine terms of service.

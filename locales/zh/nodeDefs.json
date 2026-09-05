@@ -79,7 +79,7 @@
     }
   },
   "DoubaoImageListToImage": {
-    "display_name": "图片列表转图像（9路）",
+    "display_name": "图片列表转图像",
     "description": "将 IMAGE_LIST 拆分并转换为 9 路标准 IMAGE 输出，不足部分用占位图补齐。",
     "inputs": {
       "images": {
@@ -168,26 +168,6 @@
       "0": {
         "name": "视频",
         "tooltip": "供豆包运行核心节点使用的视频"
-      }
-    }
-  },
-  "DoubaoVideoToImageAudio": {
-    "display_name": "视频转图像与音频",
-    "description": "将 VIDEO 转换为标准 IMAGE 与 AUDIO 输出，尺寸/采样率/静音时长自动从输入视频解析。",
-    "inputs": {
-      "video": {
-        "name": "视频输入",
-        "tooltip": "连接 DoubaoVideoUpload 的 VIDEO 输出（需本地上传模式）。节点会自动解析视频分辨率、音频采样率和时长。"
-      }
-    },
-    "outputs": {
-      "0": {
-        "name": "图像",
-        "tooltip": "标准 IMAGE 输出（优先视频首帧；解码失败时返回占位图）。"
-      },
-      "1": {
-        "name": "音频",
-        "tooltip": "标准 AUDIO 输出（提取音轨；无音轨或提取失败时为静音）。"
       }
     }
   },
